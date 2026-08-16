@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+*.sf3
+*.wav
+*.mid
+.DS_Store
+build/
+dist/
+*.egg-info/
