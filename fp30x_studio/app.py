@@ -128,6 +128,11 @@ class App(tk.Tk):
     # ---------- device ----------
 
     def _poll_device(self):
+        # Never re-enumerate CoreMIDI while a take is open: creating a new
+        # client mid-capture can disturb the input port we are reading from.
+        if self.capture is not None:
+            self.after(1500, self._poll_device)
+            return
         port = core.find_port()
         if port != self.port:
             self.port = port
