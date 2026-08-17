@@ -1067,20 +1067,34 @@ def _inline_katex(root: Path) -> tuple[str, str]:
     for browsers that have not needed them in a decade.
     """
     css = (root / "katex.min.css").read_text(encoding="utf-8")
-    fonts: dict[str, str] = {}
-    for f in sorted((root / "fonts").glob("*.woff2")):
-        fonts[f.name] = base64.b64encode(f.read_bytes()).decode("ascii")
+    fonts = {f.name: base64.b64encode(f.read_bytes()).decode("ascii")
+             for f in sorted((root / "fonts").glob("*.woff2"))}
+    if not fonts:
+        raise FileNotFoundError(f"no woff2 faces under {root / 'fonts'}")
 
     def one_src(match: re.Match) -> str:
+        """Collapse a whole ``src:`` declaration to the single woff2 face.
+
+        The font name must be matched permissively: KaTeX's large-operator
+        faces are ``KaTeX_Size1-Regular`` … ``KaTeX_Size4-Regular``, whose
+        digits a ``[A-Za-z]``-only pattern silently skips -- and those are
+        exactly the faces that draw the summation, integral and direct-sum
+        signs, so the failure shows up only in the mathematics that matters.
+        """
         body = match.group(0)
-        name = re.search(r"([A-Za-z_]+-[A-Za-z]+)\.woff2", body)
+        name = re.search(r"([A-Za-z0-9_]+-[A-Za-z0-9]+)\.woff2", body)
         if not name or f"{name.group(1)}.woff2" not in fonts:
             return body
-        data = fonts[f"{name.group(1)}.woff2"]
-        return (f"src:url(data:font/woff2;base64,{data}) "
-                f"format(\"woff2\")")
+        return (f'src:url(data:font/woff2;base64,{fonts[name.group(1) + ".woff2"]}) '
+                f'format("woff2")')
 
     css = re.sub(r"src:url\([^)]*\)[^;}]*", one_src, css)
+    leftover = re.findall(r"url\([^)]*\.(?:woff2?|ttf|eot|otf)[^)]*\)", css)
+    if leftover:
+        raise RuntimeError(
+            "KaTeX CSS still references fonts by URL, so the page would not be "
+            "self-contained: " + ", ".join(sorted(set(leftover)))
+        )
     js = (root / "katex.min.js").read_text(encoding="utf-8")
     js += "\n;" + (root / "contrib" / "auto-render.min.js").read_text(encoding="utf-8")
     return css, js
@@ -1736,7 +1750,7 @@ def main(argv: list[str] | None = None) -> None:
     print(a.actuator.summary())
 
     control = None
-    if args.control and args.control.exists():
+    if args.control and args.control.is_file() and args.control != args.take:
         control = analyse(args.control)
         print(f"\ncontrol: {control.path.name}, "
               f"{control.actuator.n_strikes} strikes, "
