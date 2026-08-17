@@ -61,8 +61,8 @@ def entry_for(store) -> str:
         f"- **Defects** {defects}.",
         f"- **5 ms lattice** {L.n_on_lattice}/{L.n_gaps} inter-packet gaps "
         f"({L.fraction:.2%}) are exact integer multiples of 5.000000 ms. "
-        f"{len(L.runs)} off-lattice runs, {L.runs_phase_restoring} of which "
-        f"restore the grid phase"
+        f"{len(L.runs)} off-lattice run{'' if len(L.runs) == 1 else 's'}, "
+        f"{L.runs_phase_restoring} of which restore the grid phase"
         + ("." if L.phase_intact else " — **the phase slipped**."),
         f"- **Inferred link loss** {loss.inferred_lost} messages "
         f"({loss.rate:.3%}): {loss.inferred_lost_note_ons} note-ons inferred "

@@ -139,11 +139,55 @@ off the 88-key range. Sustain (CC64) maps the *actuator* representation to a *so
 one, extending each release that falls under the pedal.
 
 ```
-python -m pytest tests/ -q            # 84 tests, synthetic MIDI, no piano needed
+python -m pytest tests/ -q            # 175 tests; the synthetic ones need no piano
 python -m fp30x_studio.figures        # writes docs/cumulative-energy.png
 ```
 
 ![Cumulative energy of a synthetic performance](docs/cumulative-energy.png)
+
+## The pipeline: ingest once, ask many times
+
+`fp30x_studio/pipeline/` turns a take into a materialised index — packets, messages,
+paired intervals, defects, and one *role* per message — so that a measurement is a fold
+over a table rather than another re-parse of the file.
+
+```
+python -m fp30x_studio.pipeline report 2026-08-17-piece    # is this take any good?
+python -m fp30x_studio.pipeline queries                    # what can be asked
+python -m fp30x_studio.pipeline query polyphony 2026-08-17-piece
+python -m fp30x_studio.pipeline query key 2026-08-17-piece key=C4
+python -m fp30x_studio.pipeline ingest --follow            # tail a take being recorded
+```
+
+`report` ingests first, so there is no step to remember. Ingest is **incremental**: the
+`.fp30` format is append-only with monotone timestamps, so a byte offset plus the set of
+keys currently down is a complete resume point, and the same code path serves a finished
+take and one still being written. The index lives in `.index/` beside the take; it is
+derived, deletable, and rebuilt by `ingest`.
+
+Three properties, each bought by a specific failure:
+
+- **Nothing is dropped.** Every message leaves the pairing layer with exactly one role —
+  paired, orphaned, pedal, or explicitly classified — and the count of roles is asserted
+  against the count of messages.
+- **Nothing is recomputed by hand.** The pairing is computed once and written down, so two
+  answers to the same question cannot disagree.
+- **Nothing is inferred silently.** Each interval records *which observation closed it*, so
+  a note-off that was never received cannot masquerade as a measured release; each take
+  records how far its timestamps can be trusted, and timing-sensitive queries refuse to be
+  quoted quietly against a poll-loop take.
+
+The disjointness invariant in `performance.py` is not relaxed to accommodate bad data. A
+re-strike closes the open interval **at the new onset** — the physically true reading, and
+one that leaves the intervals meeting at a point, so `b_i ≤ a_{i+1}` still holds exactly.
+No interval is invented; what is lost is only the release *time*, and the interval says so.
+
+`integrity` reports health of the link, not of the playing: the 5 ms BLE arrival lattice
+and its residue, the message-type census including the aftertouch null, and an inferred
+loss rate. That last one is inference because it has to be — the capture tool's `dropped`
+counter only sees packets CoreMIDI handed it, so radio-side loss is invisible to it by
+construction. Every take's numbers are appended to the takes directory's `PROVENANCE.md`
+automatically, once, the first time its stream is known to have ended.
 
 ## Requirements
 
@@ -192,13 +236,14 @@ Four dead ends, each of which looks like the right answer:
 | `fp30x_studio/core.py` | Polling capture, render, playback. No GUI. |
 | `fp30x_studio/app.py` | The tkinter interface. |
 | `fp30x_studio/performance.py` | The analysis layer: a take as a function of time. |
-| `fp30x_studio/rawcapture.py` | Reader for `.fp30x` files from the native tool. |
+| `fp30x_studio/rawcapture.py` | Reader for `.fp30x` files; `scan()` resumes from a byte offset. |
+| `fp30x_studio/pipeline/` | Incremental ingest, pairing with defect accounting, integrity, queries, CLI. |
 | `fp30x_studio/inspect_capture.py` | Byte-level census; reads `.mid`, `.json`, `.fp30x`. |
 | `fp30x_studio/figures.py` | Renders that object; `python -m fp30x_studio.figures`. |
 | `native/fp30x_capture.c` | Callback-driven CoreMIDI capture with driver timestamps. |
 | `native/fp30x_synth.c` | Virtual MIDI source emitting at known intervals, for tests. |
 | `native/benchmark.py` | Scores both capture paths against one synthetic stimulus. |
-| `tests/` | 84 tests, all against synthetic MIDI. No piano, no binary needed. |
+| `tests/` | 175 tests. Most are synthetic; the real-take fixtures skip if the takes are absent. |
 | `run.sh` | Launcher; bootstraps the virtualenv. |
 
 `bt_midi.py` in the parent directory is a standalone userland BLE-MIDI client that talks
