@@ -21,6 +21,42 @@ Press **Record**, play, press **Stop**. The take is written to
 - Renders to 44.1 kHz WAV via fluidsynth
 - Keeps a list of takes; double-click one to play it
 
+## The performance as a mathematical object
+
+`fp30x_studio/performance.py` turns a take — a live `core.Capture` or a `.mid` on disk —
+into the object it actually is, rather than a list of events.
+
+A key struck with velocity `P` at `T1` and released at `T2` is the scaled indicator
+`P · 1_[T1,T2]`. For one key those intervals are pairwise disjoint, because one actuator
+cannot be in two states at once; that invariant is **checked and raised on**, at either
+the strict grade (`I_i ∩ I_j = ∅`) or the a.e. grade (`λ(I_i ∩ I_j) = 0`, which is what a
+legato repeat produces). The whole performance is the direct sum over the 88 keys,
+
+```
+f = ⊕_k Σ_i P_i · 1_[T1_i, T2_i] : ℝ → ℝ⁸⁸
+```
+
+an `ℝ⁸⁸`-valued step function of bounded variation. What the module computes from it:
+
+- **total variation** `|Df|(ℝ)`, in `ℓ¹`, `ℓ²` or `ℓ∞` on `ℝ⁸⁸`
+- **support measure** — the union across keys, not the sum
+- **polyphony** `n(t) = Σ_k Σ_i 1_{I_k,i}(t)`, pointwise and as breakpoints
+- **cumulative energy** `F(t) = ∫ f`, in closed form, with its plateau decomposition
+- **evaluation** of the direct-sum vector at any `t`, and a structured-array / DataFrame export
+
+The parser pairs note-ons to note-offs and reports every repair it had to make: orphan
+note-ons, orphan note-offs, legato re-strikes on one key (the earlier interval is
+truncated at the new onset — the hammer resets the string), zero-length notes, and notes
+off the 88-key range. Sustain (CC64) maps the *actuator* representation to a *sounding*
+one, extending each release that falls under the pedal.
+
+```
+python -m pytest tests/ -q            # 38 tests, synthetic MIDI, no piano needed
+python -m fp30x_studio.figures        # writes docs/cumulative-energy.png
+```
+
+![Cumulative energy of a synthetic performance](docs/cumulative-energy.png)
+
 ## Requirements
 
 - macOS
@@ -67,6 +103,9 @@ Four dead ends, each of which looks like the right answer:
 | --- | --- |
 | `fp30x_studio/core.py` | Capture, render, playback. No GUI. |
 | `fp30x_studio/app.py` | The tkinter interface. |
+| `fp30x_studio/performance.py` | The analysis layer: a take as a function of time. |
+| `fp30x_studio/figures.py` | Renders that object; `python -m fp30x_studio.figures`. |
+| `tests/test_performance.py` | 38 tests, all against synthetic MIDI. |
 | `run.sh` | Launcher; bootstraps the virtualenv. |
 
 `bt_midi.py` in the parent directory is a standalone userland BLE-MIDI client that talks
