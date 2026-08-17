@@ -33,7 +33,7 @@ from . import core
 
 __all__ = [
     "STATUS", "CC_NAMES", "Event", "Capture",
-    "parse_smf", "parse_json", "load", "pressure_report",
+    "parse_smf", "parse_json", "parse_raw", "load", "pressure_report",
 ]
 
 #: Channel-voice status nibbles, with the number of data bytes each carries.
@@ -235,9 +235,38 @@ def parse_json(path: str | Path) -> Capture:
     return Capture(path=path, events=events, source="json")
 
 
+def parse_raw(path: str | Path) -> Capture:
+    """Parse a ``.fp30x`` file from the native CoreMIDI capture tool.
+
+    Same census, same byte-level scrutiny, on timestamps CoreMIDI applied near
+    the driver instead of ones a Python poll loop invented. One packet may hold
+    several messages, so the split is delegated to
+    :func:`fp30x_studio.rawcapture.split_messages` rather than re-implemented.
+    """
+    from . import rawcapture
+
+    cap = rawcapture.read(path)
+    events = []
+    for rec in cap.records:
+        sec = cap.seconds(rec.ns)
+        for raw in rawcapture.split_messages(rec.data):
+            status = raw[0]
+            if status & 0xF0 not in STATUS:
+                continue
+            events.append(Event(sec=sec, kind=STATUS[status & 0xF0][0],
+                                status=status, channel=status & 0x0F,
+                                data=tuple(raw[1:])))
+    return Capture(path=Path(path), events=events, source="fp30x")
+
+
 def load(path: str | Path) -> Capture:
-    """Parse either a ``.mid`` or the test protocol's ``.json``."""
-    return parse_json(path) if str(path).endswith(".json") else parse_smf(path)
+    """Parse a ``.mid``, the test protocol's ``.json``, or a native ``.fp30x``."""
+    s = str(path)
+    if s.endswith(".json"):
+        return parse_json(path)
+    if s.endswith(".fp30x"):
+        return parse_raw(path)
+    return parse_smf(path)
 
 
 def pressure_report(caps: list[Capture]) -> dict:

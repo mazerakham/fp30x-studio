@@ -135,6 +135,10 @@ __all__ = [
     "quantisation_step",
 ]
 
+# Capture front ends, both consumed through ``Performance.from_capture``:
+#   fp30x_studio.core.Capture        polling, ~2 ms floor, stamps on notice
+#   fp30x_studio.rawcapture.RawCapture   CoreMIDI callback, driver timestamps
+
 N_KEYS = 88
 MIDI_LOW = 21  # A0
 MIDI_HIGH = 108  # C8
@@ -578,9 +582,30 @@ class Performance:
         return cls.from_messages(msgs, **kwargs)
 
     @classmethod
-    def from_capture(cls, capture: "core.Capture", **kwargs) -> "Performance":
-        """Parse a live :class:`fp30x_studio.core.Capture` without touching disk."""
+    def from_capture(cls, capture, **kwargs) -> "Performance":
+        """Parse anything exposing ``.messages`` as ``[(seconds, mido.Message)]``.
+
+        That is the single interface both capture front ends satisfy: the
+        polling :class:`fp30x_studio.core.Capture` and the
+        :class:`fp30x_studio.rawcapture.RawCapture` read back from the native
+        CoreMIDI tool. Nothing downstream of here knows or cares which one it
+        was handed, which is why there is no second copy of this analysis.
+        """
         return cls.from_messages(capture.messages, **kwargs)
+
+    @classmethod
+    def from_raw_capture(cls, path: str | Path, *, origin: str = "first",
+                         **kwargs) -> "Performance":
+        """Parse a ``.fp30x`` file from the native CoreMIDI capture tool.
+
+        Convenience only: it reads the file with
+        :func:`fp30x_studio.rawcapture.read` and hands the result straight to
+        :meth:`from_capture`, so the timestamps carried here are the ones
+        CoreMIDI applied near the driver rather than ones a poll loop invented.
+        """
+        from . import rawcapture
+
+        return cls.from_capture(rawcapture.read(path, origin=origin), **kwargs)
 
     # -- basic access ------------------------------------------------------
 
