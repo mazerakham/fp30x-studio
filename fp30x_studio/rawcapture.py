@@ -75,7 +75,9 @@ from typing import Iterator
 __all__ = [
     "RawCapture",
     "RawRecord",
+    "Scan",
     "read",
+    "scan",
     "split_messages",
     "message_length",
 ]
@@ -293,6 +295,95 @@ class RawCapture:
 _COMMENT = re.compile(r"^#\s*(\S+)\s*(.*)$")
 
 
+@dataclass(slots=True)
+class Scan:
+    """The result of reading one contiguous byte range of a ``.fp30x`` file.
+
+    ``next_offset`` is the byte position immediately after the last line this
+    scan fully consumed, and it is always on a line boundary. Handing it back
+    to :func:`scan` resumes exactly where this one stopped, which is what makes
+    ingest incremental over an append-only file.
+
+    A trailing fragment with no newline yet -- the normal state of a file the
+    capture tool is still writing -- is *not* consumed and not counted, so the
+    same call works on a finished file and on a live one.
+    """
+
+    header: dict[str, str] = field(default_factory=dict)
+    trailer: dict[str, str] = field(default_factory=dict)
+    records: list[RawRecord] = field(default_factory=list)
+    next_offset: int = 0
+    torn: bool = False
+
+
+def _consume(out: Scan, line: str) -> bool:
+    """Fold one stripped line into ``out``. False means the line is torn."""
+    if not line:
+        return True
+    if line.startswith("#"):
+        m = _COMMENT.match(line)
+        if m:
+            key, rest = m.group(1), m.group(2).strip()
+            if key == "end":
+                parts = rest.split()
+                out.trailer = {parts[i]: parts[i + 1]
+                               for i in range(0, len(parts) - 1, 2)}
+            else:
+                out.header[key] = rest
+        return True
+    parts = line.split()
+    if len(parts) < 2:
+        return True
+    try:
+        ns = int(parts[0])
+        data = bytes(int(b, 16) for b in parts[1:])
+    except ValueError:
+        return False
+    out.records.append(RawRecord(ns=ns, data=data))
+    return True
+
+
+def scan(path: str | Path, *, start: int = 0, whole: bool = False) -> Scan:
+    """Parse the lines of ``path`` beginning at byte offset ``start``.
+
+    This is the one parser; :func:`read` is ``scan`` over the whole file plus
+    the origin convention. Only complete lines are consumed, so ``next_offset``
+    never lands inside a record and a resumed scan cannot split one.
+
+    ``whole=True`` additionally consumes a trailing fragment that has no
+    newline yet, which is what a one-shot whole-file read wants. The default,
+    ``whole=False``, leaves it alone: that fragment is the normal state of a
+    file the capture tool is still writing, and consuming half a record would
+    invent a timestamp. So the same call serves a finished file and a live one.
+
+    A line whose fields do not parse is *torn*: scanning stops there,
+    ``next_offset`` stays at its first byte and :attr:`Scan.torn` is set. The
+    parser does not guess at damaged bytes and does not skip past them --
+    resuming later re-reads the same line, which is the right behaviour when a
+    laptop sleep cut a write in half and the tool completed it afterwards.
+    """
+    path = Path(path)
+    out = Scan(next_offset=start)
+
+    with path.open("rb") as fh:
+        fh.seek(start)
+        blob = fh.read()
+
+    cut = blob.rfind(b"\n")
+    body = blob if (whole or cut == -1) else blob[:cut + 1]
+    offset = start
+
+    for raw_line in body.splitlines(keepends=True):
+        if not _consume(out, raw_line.decode("utf-8", errors="replace").strip()):
+            # Stop, don't guess, and leave the offset before the torn line.
+            out.torn = True
+            break
+        offset += len(raw_line)
+
+    out.next_offset = offset
+    return out
+
+
 def read(path: str | Path, *, origin: str = "first") -> RawCapture:
     """Parse a ``.fp30x`` file.
 
@@ -304,35 +395,9 @@ def read(path: str | Path, *, origin: str = "first") -> RawCapture:
     reports the truncation rather than the parse failing.
     """
     path = Path(path)
-    cap = RawCapture(path=path)
-
-    with path.open("r", encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith("#"):
-                m = _COMMENT.match(line)
-                if not m:
-                    continue
-                key, rest = m.group(1), m.group(2).strip()
-                if key == "end":
-                    parts = rest.split()
-                    cap.trailer = {parts[i]: parts[i + 1]
-                                   for i in range(0, len(parts) - 1, 2)}
-                else:
-                    cap.header[key] = rest
-                continue
-            parts = line.split()
-            if len(parts) < 2:
-                continue
-            try:
-                ns = int(parts[0])
-                data = bytes(int(b, 16) for b in parts[1:])
-            except ValueError:
-                # A torn final line from a crash or a sleep. Stop, don't guess.
-                break
-            cap.records.append(RawRecord(ns=ns, data=data))
+    s = scan(path, whole=True)
+    cap = RawCapture(path=path, header=s.header, trailer=s.trailer,
+                     records=s.records)
 
     if origin == "header":
         cap.origin_ns = int(cap.header.get("anchor_mach_ns", 0))
