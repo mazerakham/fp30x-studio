@@ -10,6 +10,8 @@ real capture produces and a naive parser gets wrong.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -518,6 +520,131 @@ def test_the_figure_renders_to_a_png(tmp_path):
     out = render(tmp_path / "fig.png", dpi=60)
     assert out.exists() and out.stat().st_size > 20_000
     assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# --------------------------------------------------------------------------
+# inspect_capture: the byte-level census
+# --------------------------------------------------------------------------
+
+def _write_smf(tmp_path, messages, name="probe.mid", tpb=960, bpm=120.0):
+    """Write raw mido messages at absolute seconds to a Standard MIDI File."""
+    import mido
+    mid = mido.MidiFile(ticks_per_beat=tpb)
+    track = mido.MidiTrack()
+    mid.tracks.append(track)
+    tempo = mido.bpm2tempo(bpm)
+    track.append(mido.MetaMessage("set_tempo", tempo=tempo, time=0))
+    prev = 0
+    for t, msg in messages:
+        tick = int(round(mido.second2tick(t, tpb, tempo)))
+        track.append(msg.copy(time=tick - prev))
+        prev = tick
+    p = tmp_path / name
+    mid.save(str(p))
+    return p
+
+
+def test_the_pressure_detector_can_actually_see_pressure(tmp_path):
+    """The positive control, without which 'zero aftertouch' proves nothing.
+
+    If the parser were simply blind to 0xDn and 0xAn, a real capture would also
+    report zero. So: synthesise a stream that DOES contain both, and require
+    the detector to find them.
+    """
+    import mido
+    from fp30x_studio.inspect_capture import load, pressure_report
+
+    msgs = [(0.0, mido.Message("note_on", note=C4, velocity=90))]
+    for i in range(10):  # a pressure ramp while the key is held
+        msgs.append((0.1 + 0.1 * i,
+                     mido.Message("aftertouch", value=40 + 5 * i)))
+        msgs.append((0.15 + 0.1 * i,
+                     mido.Message("polytouch", note=C4, value=50 + 4 * i)))
+    msgs.append((2.0, mido.Message("note_off", note=C4, velocity=64)))
+
+    cap = load(_write_smf(tmp_path, msgs))
+    rep = pressure_report([cap])
+
+    assert rep["census"]["aftertouch"] == 10
+    assert rep["census"]["polytouch"] == 10
+    assert rep["pressure_messages"] == 20
+    assert rep["n_notes"] == 1
+    assert rep["notes_with_pressure"] == 1
+    assert "continuous pressure data IS present" in rep["verdict"]
+    # and the events really are visible inside the note's lifetime
+    during = cap.during(0.0, 2.0, note=C4)
+    assert sum(1 for e in during if e.kind in ("aftertouch", "polytouch")) == 20
+
+
+def test_a_stream_without_pressure_reports_the_discrete_verdict(tmp_path):
+    """The negative case, matching what the real FP-30X captures look like."""
+    import mido
+    from fp30x_studio.inspect_capture import load, pressure_report
+
+    msgs = []
+    for i, n in enumerate((C4, E4, G4)):
+        msgs.append((i * 0.5, mido.Message("note_on", note=n, velocity=80 + i)))
+        msgs.append((i * 0.5 + 0.4, mido.Message("note_off", note=n, velocity=70)))
+    rep = pressure_report([load(_write_smf(tmp_path, msgs))])
+
+    assert rep["pressure_messages"] == 0
+    assert rep["n_notes"] == 3 and rep["notes_with_pressure"] == 0
+    assert "discrete-event" in rep["verdict"]
+    assert rep["longest_note"]["n_during_key"] == 0
+
+
+def test_inspect_capture_decodes_running_status_and_continuous_cc(tmp_path):
+    """Running status must not swallow events, and CC64 must not be flattened."""
+    import mido
+    from fp30x_studio.inspect_capture import load
+
+    msgs = [(0.0, mido.Message("control_change", control=64, value=v))
+            for v in (0, 4, 38, 73, 105, 127)]
+    msgs += [(0.5, mido.Message("note_on", note=C4, velocity=64)),
+             (0.6, mido.Message("note_on", note=E4, velocity=65)),
+             (1.0, mido.Message("note_on", note=C4, velocity=0))]
+    cap = load(_write_smf(tmp_path, msgs))
+
+    vals = [v for _, v in cap.controls()[64]]
+    assert vals == [0, 4, 38, 73, 105, 127]
+    assert set(vals) - {0, 127}, "a continuous pedal must not read as binary"
+    # mido emits the consecutive same-status messages with running status;
+    # every one of them must still be decoded
+    assert cap.census()["control_change"] == 6
+    assert any(e.running_status for e in cap.events)
+    # note_on velocity 0 is a release, and pairs with the earlier note_on
+    notes = cap.notes()
+    assert [n["name"] for n in notes] == ["C4"]
+    assert notes[0]["vel_off"] == 0
+
+
+def test_inspect_capture_reads_the_live_test_protocol_json(tmp_path):
+    """The wiggle-test writes JSON; the same census must run on it."""
+    import json as _json
+    from fp30x_studio.inspect_capture import load, pressure_report
+
+    rows = [[0.0, [0x90, C4, 100]], [0.5, [0xD0, 77]], [1.0, [0x80, C4, 64]]]
+    p = tmp_path / "wiggle-test.json"
+    p.write_text(_json.dumps(rows))
+    cap = load(p)
+    assert cap.source == "json"
+    rep = pressure_report([cap])
+    assert rep["census"]["aftertouch"] == 1
+    assert rep["notes_with_pressure"] == 1
+
+
+def test_inspect_capture_matches_the_real_archive_if_present():
+    """Guards the claim on the page: zero pressure across the real captures."""
+    from fp30x_studio.inspect_capture import load, pressure_report
+
+    archive = sorted(Path("/Users/jake/Music/FP-30X Studio/takes").glob("*.mid"))
+    if not archive:
+        pytest.skip("no real captures on this machine")
+    rep = pressure_report([load(p) for p in archive])
+    assert rep["pressure_messages"] == 0
+    assert rep["notes_with_pressure"] == 0
+    assert rep["n_notes"] > 100
+    assert "discrete-event" in rep["verdict"]
 
 
 def _raw(spec):
