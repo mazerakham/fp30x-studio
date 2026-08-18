@@ -1,0 +1,22 @@
+{
+  "model": "string",
+  "partials": 28,
+  "inharmonicity_B": 0.0004,
+  "partial_amp_rolloff": 1.25,
+  "partial_decay_base": 2.4,
+  "partial_decay_exponent": 0.65,
+  "attack_ms": 4.0,
+  "hammer_noise": 0.22,
+  "velocity_brightness": 1.3,
+  "release_ms_fast": 40.0,
+  "release_ms_slow": 340.0,
+  "damper_cc64_scale": 1.0,
+  "fm_ratio": 3.37,
+  "fm_index": 0.0,
+  "bell_partial": 0.0,
+  "bell_amp": 0.0,
+  "bark_ms": 0.0,
+  "bark_amp": 0.0,
+  "name": "acoustic",
+  "note": "Struck string. B = 4e-4 at A4, stretched to 8.6e-5 at F1 and 8.6e-4 at F6 across the piece's range. tau_1 = 2.4 s at A4, halving every two octaves up. Rolloff and decay exponent were set by sweeping them against the spectral centroid of single notes at F2/F3/F4/F5 and picking the pair that lands the centroid near 3x the fundamental, which is where measured piano tones sit. The tine fields are zeroed, not omitted: the schema is shared and every key is always present."
+}
