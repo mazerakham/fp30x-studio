@@ -10,3 +10,4 @@ dist/
 *.fp30x
 *.egg-info/
 .pytest_cache/
+docs/takes.json
