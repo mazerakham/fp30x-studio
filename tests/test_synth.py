@@ -89,13 +89,57 @@ def test_the_two_presets_use_the_two_different_models():
 
 # -- the partial series -----------------------------------------------------
 
-def test_inharmonicity_spans_bass_to_treble_as_stated():
-    B_ref = 4.0e-4
-    b_f1 = model.inharmonicity_at(29, B_ref)     # F1, bottom of the piece
-    b_f6 = model.inharmonicity_at(89, B_ref)     # F6, top of the piece
-    assert 5e-5 < b_f1 < 1.5e-4
-    assert 5e-4 < b_f6 < 1.5e-3
-    assert b_f6 / b_f1 == pytest.approx(10.0, rel=1e-6)
+def test_inharmonicity_law_reproduces_the_measured_steinway():
+    """The B law is checked against the notes it was fitted to, not against a
+    remembered rule of thumb. Values are the per-note medians measured on the
+    Iowa Steinway B (~/workspace/audio/timbre-data/iowa-fits.json); the
+    tolerance is the fit's own residual scatter, a factor of 1.4."""
+    p = load_preset("acoustic")
+    measured = {48: 1.165e-4, 54: 1.805e-4, 60: 3.278e-4,
+                66: 5.766e-4, 72: 1.045e-3, 84: 2.423e-3}
+    for midi, want in measured.items():
+        got = model.inharmonicity_at(midi, p.inharmonicity_B,
+                                     p.inharmonicity_decades_per_octave,
+                                     p.inharmonicity_floor)
+        assert 1 / 1.4 < got / want < 1.4, (midi, got, want)
+
+
+def test_inharmonicity_floors_below_the_bass_break():
+    """The exponential does not extend into the wound strings. Measured B is
+    flat at ~1.4e-4 from MIDI 30 to 48; extrapolating the treble law gives
+    2.3e-5 at C1, sixteen times too small."""
+    p = load_preset("acoustic")
+    at = lambda m: model.inharmonicity_at(m, p.inharmonicity_B,
+                                          p.inharmonicity_decades_per_octave,
+                                          p.inharmonicity_floor)
+    assert at(24) == pytest.approx(p.inharmonicity_floor)
+    assert at(36) == pytest.approx(p.inharmonicity_floor)
+    assert at(84) > 10 * p.inharmonicity_floor
+
+
+def test_rolloff_steepens_with_pitch():
+    """One rolloff for the keyboard was the largest error in the guessed
+    preset: measured, the bass is nearly flat and the treble is steep."""
+    p = load_preset("acoustic")
+    at = lambda m: model.rolloff_at(m, p.partial_amp_rolloff, p.rolloff_per_octave)
+    assert at(24) < 1.0
+    assert at(96) > 4.0
+    assert at(69) == pytest.approx(p.partial_amp_rolloff)
+
+
+def test_damper_leaks_at_full_pedal_and_has_an_escapement():
+    """Two defects the old linear map had. It reached exactly zero at cc64=127
+    -- and cc64 was 127 for ~90% of his playing time, so the damper was not
+    weak then, it was off -- and it had no escapement, when the mechanism has a
+    knee partway down the travel."""
+    d0 = model.damper_contact(0)
+    d_full = model.damper_contact(127)
+    assert d0 == pytest.approx(1.0)
+    assert 0 < d_full < 0.1                     # leaks, never switches off
+    # flat through the top of the travel, then a knee
+    assert model.damper_contact(20) == pytest.approx(d0)
+    assert model.damper_contact(70) < d0
+    assert model.damper_contact(70) > model.damper_contact(90)
 
 
 def test_partials_are_stretched_sharp_and_bandlimited():
@@ -143,10 +187,17 @@ def test_release_velocity_changes_how_much_sound_survives_the_release(preset_nam
 
 # -- the damper integral ----------------------------------------------------
 
-def test_pedal_down_defeats_the_damper_entirely():
+def test_pedal_down_almost_but_not_entirely_defeats_the_damper():
+    """It used to be *entirely*, and that was the defect. cc64 sat at 127 for
+    86.6-91.4% of the playing time on his takes, so a damper that switches off
+    at the top of the travel is switched off for almost the whole piece and
+    every pedalled note runs to the model's tail limit. Felt leaks; the residual
+    is small but it is not zero."""
     p = load_preset("acoustic")
     ped_t, ped_D = _flat_pedal(127, p)
-    assert np.allclose(ped_D, 0.0), "full pedal must integrate to no damping at all"
+    rate = float(np.interp(1.0, ped_t, ped_D))
+    assert 0.0 < rate < 0.1, "full pedal must leak, not switch the damper off"
+    assert rate == pytest.approx(p.pedal_leak, rel=1e-9)
 
 
 def test_pedal_up_integrates_at_unit_rate():
@@ -163,7 +214,51 @@ def test_half_pedal_is_a_middle_damping_rate_not_a_switch():
         rates.append(float(np.interp(1.0, t, D)))
     assert rates == sorted(rates, reverse=True)
     assert 0.0 < rates[2] < rates[0], "CC64 = 64 must not behave like CC64 = 0"
-    assert rates[2] == pytest.approx(1.0 - 64 / 127.0, rel=1e-9)
+    assert rates[2] == pytest.approx(
+        model.damper_contact(64, p.pedal_engage, p.pedal_knee, p.pedal_leak,
+                             p.damper_cc64_scale), rel=1e-9)
+
+
+def test_the_damper_takes_the_top_of_the_spectrum_first():
+    """The bug this pass exists to fix. The damper used to be one scalar
+    exponential applied to the summed buffer, so a note under the felt kept its
+    high partials at full relative weight all the way to silence -- which is
+    the one thing a real string certainly does not do. With the per-partial
+    n^q law the damped tail must be darker than the free tail."""
+    p = load_preset("acoustic")
+    ped_t, ped_D = _flat_pedal(0, p)          # pedal up: the damper is on
+
+    def centroid(buf):
+        x = buf.astype(np.float64)
+        sp = np.abs(np.fft.rfft(x * np.hanning(x.size)))
+        fr = np.fft.rfftfreq(x.size, 1.0 / SR)
+        return float((sp * fr).sum() / max(sp.sum(), 1e-30))
+
+    damped = voices.render_string(60, 90, 100, 0.0, 0.20, p, SR,
+                                  ped_t, ped_D, _rng())
+    free = voices.render_string(60, 90, 100, 0.0, 60.0, p, SR,
+                                ped_t, ped_D, _rng())
+    a, b = int(0.30 * SR), int(0.45 * SR)
+    assert damped.size > b and free.size > b
+    assert centroid(damped[a:b]) < centroid(free[a:b]) * 0.95
+
+
+def test_a_brief_pedal_lift_bites_even_though_it_lasts_15_ms():
+    """769 of his pedal excursions were 15 ms median, 30 ms maximum -- the
+    FP-30X never reports a sustained intermediate position. Under a pure
+    dwell integral a 15 ms landing contributes nothing; physically it takes
+    real energy out. The contact term is what makes it count."""
+    p = load_preset("acoustic")
+
+    class _S:
+        duration = 4.0
+        pedal = [(0.0, 127), (1.000, 0), (1.015, 127)]
+
+    t, D = engine.damper_integral(_S(), p, 4.0)
+    got = float(np.interp(2.0, t, D))
+    dwell = 0.015 * 1.0 + (2.0 - 0.015) * p.pedal_leak
+    assert got > dwell, "a 15 ms felt landing must dump more than its dwell"
+    assert got == pytest.approx(dwell + p.pedal_contact_bite, rel=1e-6)
 
 
 def test_a_note_released_under_full_pedal_keeps_ringing():

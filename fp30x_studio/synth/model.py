@@ -37,20 +37,17 @@ __all__ = [
     "VELOCITY_FULL_SCALE",
     "VELOCITY_AMP_EXPONENT",
     "B_REFERENCE_NOTE",
-    "B_DECADE_SEMITONES",
-    "DECAY_HALVING_SEMITONES",
     "TINE_DECAY_HALVING_SEMITONES",
-    "SECOND_STAGE_RATIO",
-    "SECOND_STAGE_MIX",
     "FM_INDEX_DECAY_S",
     "PAN_WIDTH",
-    "HAMMER_STRIKE_POINT",
-    "UNISON_DETUNE_CENTS",
-    "UNISON_DEPTH",
     "UNISON_LOWEST_NOTE",
+    "IOWA_DYNAMIC_VNORM",
     "inharmonicity_at",
+    "rolloff_at",
     "partial_frequencies",
+    "radiation_gain",
     "decay_scale_at",
+    "damper_contact",
     "velocity_norm",
 ]
 
@@ -69,57 +66,37 @@ VELOCITY_FULL_SCALE = 103.0
 #: dynamic range from ppp to ff.
 VELOCITY_AMP_EXPONENT = 1.5
 
-#: ``inharmonicity_B`` in a preset is B at this MIDI note (A4).
+#: ``inharmonicity_B``, ``partial_amp_rolloff`` and ``partial_decay_base`` in a
+#: preset are all defined at this MIDI note (A4), and the per-register laws
+#: below are exponents applied about it.
 B_REFERENCE_NOTE = 69
-
-#: B rises by a factor of ten every this many semitones, so a preset value of
-#: 4e-4 at A4 gives 8.6e-5 at F1 and 8.6e-4 at F6 -- the 1e-4-bass-to-1e-3-
-#: treble span measured on real uprights, spread over the F1-F6 the piece uses.
-B_DECADE_SEMITONES = 60.0
-
-#: Fundamental decay time halves every this many semitones upward. A bass note
-#: rings for tens of seconds and a treble note for about one; a single
-#: ``partial_decay_base`` cannot express that, so the pitch law is here.
-DECAY_HALVING_SEMITONES = 24.0
 
 #: The tine's decay is far less pitch-dependent than a string's -- the bars are
 #: individually tuned resonators, not one scaled string -- so its halving
-#: length is much longer.
+#: length is much longer. Not fitted: no licensed single-note Rhodes corpus was
+#: available, see ``docs/timbre-fit.html``.
 TINE_DECAY_HALVING_SEMITONES = 48.0
-
-#: Two-stage decay. A struck string's two polarisations decouple: the vertical
-#: one dumps energy into the bridge quickly, the horizontal one hangs on. The
-#: envelope is ``(1 - mix) * exp(-t/tau) + mix * exp(-t/(tau * ratio))``.
-SECOND_STAGE_RATIO = 3.5
-SECOND_STAGE_MIX = 0.22
 
 #: The FM index falls with this time constant, independent of the amplitude
 #: envelope. This is what makes the tine bark at the attack and turn into a
 #: near-sine a moment later.
 FM_INDEX_DECAY_S = 0.35
 
-#: Where the hammer hits, as a fraction of the speaking length. The hammer
-#: cannot excite a partial with a node at the strike point, so ``a_n`` is
-#: multiplied by ``|sin(n pi alpha)|``: at alpha = 1/8 the 8th, 16th and 24th
-#: partials are notched out. This is the single cheapest thing that separates a
-#: struck string from an additive series, and real pianos strike between 1/7 and
-#: 1/9 for exactly this reason. It is a fixed constant rather than a preset
-#: field because the shared schema does not carry it; the workbench, which does
-#: not apply it, will render the same preset a little brighter at the notches.
-HAMMER_STRIKE_POINT = 0.125
+#: Below this note nothing beats. Measured on the Iowa Steinway B: the
+#: amplitude modulation of the fundamental has a periodogram concentration of
+#: 0.013 below MIDI 48 and 0.020 over 48-59, against 0.337 from MIDI 60 up.
+#: Under 48 the strings are single wound ones, so ``unison_depth`` is faded to
+#: nothing below it and reaches full an octave higher.
+UNISON_LOWEST_NOTE = 48
 
-#: Unisons. Two or three strings per note, tuned very slightly apart, beat
-#: against each other. Two equal detuned sines are exactly one sine at the mean
-#: frequency times a cosine at half the difference, so this costs one extra
-#: cosine per partial rather than a second oscillator, and the beat rate scales
-#: with partial frequency the way it physically must. Depth is below 1 because
-#: the treble has three strings, not two, and never nulls completely.
-UNISON_DETUNE_CENTS = 0.7
-UNISON_DEPTH = 0.40
-
-#: Below this note the strings are single wound ones and there is no unison to
-#: beat, so the depth is faded out under it.
-UNISON_LOWEST_NOTE = 40
+#: What the three Iowa dynamic markings were taken to be on the model's
+#: normalised velocity axis. This is the one assumption joining the recorded
+#: corpus to the MIDI velocity byte, and it is an assumption: the recordings
+#: carry no velocity data, only the words pp, mf and ff. Everything downstream
+#: that depends on velocity -- ``velocity_brightness`` above all -- inherits its
+#: error, which is why that coefficient's confidence interval is the widest of
+#: the fitted set.
+IOWA_DYNAMIC_VNORM = {"pp": 0.25, "mf": 0.55, "ff": 0.95}
 
 #: Stereo width. Pan position is linear in pitch across the 88 keys; +-this at
 #: the extremes. Purely a listening convenience, no physical claim.
@@ -142,22 +119,40 @@ class Preset:
 
     model: str = "string"
 
-    # -- partial series (string) --
-    partials: int = 24
-    inharmonicity_B: float = 4.0e-4
-    partial_amp_rolloff: float = 1.6
-    partial_decay_base: float = 3.0
-    partial_decay_exponent: float = 0.75
+    # -- partial series (string). B, rolloff and tau_1 are all "at A4"; the
+    #    three per-register laws beside them say how they move with pitch. --
+    partials: int = 32
+    inharmonicity_B: float = 6.5e-4
+    inharmonicity_decades_per_octave: float = 0.386
+    inharmonicity_floor: float = 1.4e-4
+    partial_amp_rolloff: float = 3.0
+    rolloff_per_octave: float = 0.64
+    hammer_strike_point: float = 0.091
+    partial_decay_base: float = 0.75
+    decay_halving_semitones: float = 15.5
+    partial_decay_exponent: float = 0.13
+    second_stage_ratio: float = 12.0
+    second_stage_mix: float = 0.011
+
+    # -- the two strings of a unison, beating against each other --
+    unison_detune_cents: float = 1.5
+    unison_depth: float = 0.25
 
     # -- attack --
     attack_ms: float = 4.0
     hammer_noise: float = 0.18
-    velocity_brightness: float = 1.2
+    velocity_brightness: float = 1.6
+    partial_phase_spread: float = 1.0
 
     # -- release / damper --
     release_ms_fast: float = 45.0
     release_ms_slow: float = 320.0
     damper_cc64_scale: float = 1.0
+    damper_decay_exponent: float = 1.0
+    pedal_engage: float = 0.55
+    pedal_knee: float = 0.25
+    pedal_leak: float = 0.02
+    pedal_contact_bite: float = 0.05
 
     # -- tine --
     fm_ratio: float = 3.37
@@ -227,15 +222,30 @@ PRESET_KEYS = (
     "model",
     "partials",
     "inharmonicity_B",
+    "inharmonicity_decades_per_octave",
+    "inharmonicity_floor",
     "partial_amp_rolloff",
+    "rolloff_per_octave",
+    "hammer_strike_point",
     "partial_decay_base",
+    "decay_halving_semitones",
     "partial_decay_exponent",
+    "second_stage_ratio",
+    "second_stage_mix",
+    "unison_detune_cents",
+    "unison_depth",
     "attack_ms",
     "hammer_noise",
     "velocity_brightness",
+    "partial_phase_spread",
     "release_ms_fast",
     "release_ms_slow",
     "damper_cc64_scale",
+    "damper_decay_exponent",
+    "pedal_engage",
+    "pedal_knee",
+    "pedal_leak",
+    "pedal_contact_bite",
     "fm_ratio",
     "fm_index",
     "bell_partial",
@@ -268,18 +278,49 @@ def velocity_norm(velocity: int) -> float:
     return min(max(velocity, 0) / VELOCITY_FULL_SCALE, 1.0)
 
 
-def inharmonicity_at(note: int, B_ref: float) -> float:
-    """B for one key. ``B_ref`` is the preset's value, defined at A4."""
-    return B_ref * 10.0 ** ((note - B_REFERENCE_NOTE) / B_DECADE_SEMITONES)
+def inharmonicity_at(note: int, B_ref: float,
+                     decades_per_octave: float = 0.386,
+                     floor: float = 1.4e-4) -> float:
+    """B for one key. ``B_ref`` is the preset's value, defined at A4.
+
+    Fitted on 23 Iowa Steinway B notes from C3 up: ``log10 B`` is linear in
+    pitch with slope 0.386 +- 0.027 decades per octave -- a decade every 31
+    semitones, not the 60 the model used to assume -- and B(A4) = 6.5e-4, not
+    4e-4. Residual scatter about the line is a factor of 1.38.
+
+    The floor is not cosmetic. Below about C3 the law stops: measured B is
+    1.4e-4 (IQR 1.28-1.62e-4) flat from MIDI 30 to 48 and then *rises* again to
+    2.5e-4 at C1, because those are wound strings on a different scaling and the
+    bass break is a discontinuity, not a bend. The exponential extrapolates to
+    2.3e-5 at C1, sixteen times too small. A floor gets the flat part right and
+    leaves the C1 rise as a known, documented residual.
+    """
+    B = B_ref * 10.0 ** ((note - B_REFERENCE_NOTE) / 12.0 * decades_per_octave)
+    return max(B, floor)
+
+
+def rolloff_at(note: int, rolloff_ref: float, per_octave: float = 0.64) -> float:
+    """The partial amplitude tilt for one key, ``a_n ~ n^-rolloff``.
+
+    One number for the whole keyboard is wrong by more than any other single
+    thing in the old preset. Fitted jointly over pitch and dynamic on 17 notes:
+    rolloff is 3.02 +- 0.19 at A4 and rises 0.643 +- 0.152 per octave, so the
+    bass is nearly flat (0.6 at C1) and the top two octaves are steep (4.3 at
+    C7). The old constant 1.25 was far too bright above the middle and far too
+    dark below it, and a treble note synthesised with it carries twenty partials
+    that the recorded instrument does not have.
+    """
+    return max(0.0, rolloff_ref + per_octave * (note - B_REFERENCE_NOTE) / 12.0)
 
 
 def partial_frequencies(f0: float, n_max: int, B: float, nyquist: float):
     """``f_n = n f0 sqrt(1 + B n^2)`` for the partials that fit under Nyquist.
 
     Returns ``(n, f)`` as parallel numpy arrays. The stiffness term is what
-    makes a piano a piano: by the 16th partial at B = 4e-4 the series is already
-    a quarter-tone sharp of harmonic, and it is that stretch -- not the
-    amplitude envelope -- that stops additive synthesis sounding like an organ.
+    makes a piano a piano, and the law itself is confirmed by the data rather
+    than assumed: fitted per note, the RMS departure of the measured partials
+    from this curve is 1-3 cents over as many as 32 partials. The law is right;
+    it was the coefficient that was wrong.
     """
     import numpy as np
 
@@ -289,7 +330,48 @@ def partial_frequencies(f0: float, n_max: int, B: float, nyquist: float):
     return n[keep], f[keep]
 
 
-def decay_scale_at(note: int, halving_semitones: float = DECAY_HALVING_SEMITONES
-                   ) -> float:
-    """Multiplier on ``partial_decay_base`` for one key. 1.0 at A4."""
+def decay_scale_at(note: int, halving_semitones: float = 15.5) -> float:
+    """Multiplier on ``partial_decay_base`` for one key. 1.0 at A4.
+
+    Fitted on the prompt (first 25 dB) decay of 26 notes: the fundamental's
+    time constant falls 0.775 +- 0.097 octaves per octave of pitch, halving
+    every 15.5 semitones rather than every 24. Scatter about the line is 0.89
+    octaves, which is large and honest -- neighbouring keys on a real piano
+    differ by that much.
+    """
     return 2.0 ** (-(note - B_REFERENCE_NOTE) / halving_semitones)
+
+
+def damper_contact(cc64: float, engage: float = 0.55, knee: float = 0.25,
+                   leak: float = 0.02, scale: float = 1.0) -> float:
+    """Felt-on-string contact ``d`` in [0, 1], from the half-damper position.
+
+    The old map was ``d = 1 - cc64/127``: linear, and zero at the top. Both
+    halves of that are wrong about the mechanism.
+
+    * A damper pedal has an **escapement**. Through the top of its travel the
+      felt is clear of the strings and nothing changes; contact is lost, and
+      regained, over a narrow band partway down. ``engage`` is where that band
+      is centred and ``knee`` is how wide it is, as fractions of full travel.
+    * A real damper **leaks**. Felt is not a perfect absorber, and the strings
+      it is not touching are still coupled through the bridge. ``leak`` is the
+      residual contact at full pedal. It matters far more than its size
+      suggests, because cc64 sat at 127 for 86.6-91.4% of the playing time on
+      his own takes: with ``leak = 0`` the damper is not weak during that time,
+      it is *switched off*, and every pedalled note rings to the model's tail
+      limit instead of dying.
+
+    ``scale`` is the preset's ``damper_cc64_scale`` and still multiplies the
+    whole pedal effect, so ``0`` is a piano with no pedal at all.
+    """
+    u = min(max(cc64, 0.0), 127.0) / 127.0 * scale
+    if knee <= 1e-6:
+        step = 0.0 if u >= engage else 1.0
+    else:
+        step = min(max((engage - u) / knee + 0.5, 0.0), 1.0)
+    return min(max(leak + (1.0 - leak) * step, 0.0), 1.0)
+
+
+def velocity_norm(velocity: int) -> float:
+    """MIDI strike velocity on [0, 1], scaled to the range the action uses."""
+    return min(max(velocity, 0) / VELOCITY_FULL_SCALE, 1.0)

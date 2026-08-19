@@ -1,0 +1,400 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fitting the Piano</title>
+<style>
+:root{--bg:#0e1116;--panel:#161b22;--line:#2a323d;--ink:#e6edf3;--dim:#9aa7b4;
+--dim2:#6e7d8c;--acc:#7ee0d6;--acc2:#8ab4f8;--warn:#f0b45e;--bad:#e08a8a;
+--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+line-height:1.62;font-size:15.5px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1060px;margin:0 auto;padding:44px 22px 100px}
+h1{font-size:29px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{color:var(--dim);margin:0 0 30px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.11em;color:var(--dim2);
+margin:46px 0 14px;font-weight:600}
+h3{font-size:16px;margin:26px 0 8px}
+.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:26px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.stat .v{font-size:29px;font-weight:650;letter-spacing:-.02em;font-family:var(--mono)}
+.stat .k{color:var(--dim);font-size:12.5px;margin-top:5px}
+.big .v{color:var(--acc)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+padding:20px;margin:16px 0}
+.cap{color:var(--dim);font-size:13.5px;margin-top:10px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim2);font-weight:600;font-size:12px;text-transform:uppercase;
+letter-spacing:.06em}
+td.n{font-family:var(--mono);white-space:nowrap}
+.up{color:var(--warn)} .dn{color:var(--bad)}
+math{font-size:1.05em}
+.eq{margin:14px 0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.two{grid-template-columns:1fr}}
+.warnbox{border-color:#5a4426;background:#1a1610}
+.okbox{border-color:#2f6f6a;background:#101f21}
+code{font-family:var(--mono);font-size:.9em;background:#1c232c;padding:1px 5px;
+border-radius:4px}
+footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
+color:var(--dim2);font-size:12.5px}
+.scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.legend{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:12.5px;color:var(--dim);
+margin-top:12px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;
+margin-right:7px;vertical-align:-1px}
+ul{padding-left:20px} li{margin:6px 0}
+</style>
+<div class="wrap">
+
+<h1>Fitting the piano</h1>
+<p class="sub">Every coefficient in the string model, measured against
+38 isolated notes of a Steinway&nbsp;B instead of guessed —
+19&nbsp;August&nbsp;2026. What moved, what did not, and where the model's
+functional form cannot fit the data at all.</p>
+
+<div class="card okbox">
+<p><b>I cannot hear any of this.</b> Nothing below is a claim that the new
+render sounds better. It is a claim about numbers: what the recordings say, what
+the old preset said, and how far apart those two things were.</p>
+</div>
+
+<div class="hero">
+  <div class="stat big"><div class="v">38</div>
+    <div class="k">notes measured, C1–C7 × pp/mf/ff</div></div>
+  <div class="stat"><div class="v">15</div>
+    <div class="k">coefficients fitted</div></div>
+  <div class="stat"><div class="v">7</div>
+    <div class="k">left unfitted, and flagged</div></div>
+  <div class="stat"><div class="v">1–3¢</div>
+    <div class="k">departure from the stiff-string law over 32 partials</div></div>
+</div>
+
+<h2>The short version</h2>
+<div class="card">
+<p>Three coefficients were wrong by a lot, and they are all the same kind of
+wrong: <b>a quantity that varies by an order of magnitude across the keyboard was
+stored as one number.</b></p>
+<ul>
+<li><b>The amplitude rolloff</b> was 1.25 for every key. Measured, it is
+3.02 at A4 and rises
++0.64 per octave — nearly flat in the bass,
+steep at the top. At C6 the old preset gave a partial series roughly 20&nbsp;dB
+too bright at the tenth partial, which is to say it synthesised a dozen partials
+that the recorded instrument does not have. This is the largest single error.</li>
+<li><b>The decay time</b> was 2.4&nbsp;s at A4, halving every two octaves.
+Measured, the prompt decay is 0.75&nbsp;s and
+halves every 15.5 semitones — three times
+shorter, and falling faster with pitch.</li>
+<li><b>The aftersound</b> was 0.22 of the prompt sound. Measured it is
+0.0106, twenty times smaller. Between that and the
+decay time, the old model sustained every note like an organ stop.</li>
+</ul>
+<p>And <b>inharmonicity was not the problem.</b> Its coefficient was off — 4e−4
+against a measured 6.5e−4 at A4, and the wrong slope — but the
+<em>law</em> holds beautifully: the RMS departure of the measured partial series
+from
+<math xmlns="http://www.w3.org/1998/Math/MathML"><msub><mi>f</mi><mi>n</mi></msub><mo>=</mo><mi>n</mi><msub><mi>f</mi><mn>0</mn></msub><msqrt><mrow><mn>1</mn><mo>+</mo><mi>B</mi><msup><mi>n</mi><mn>2</mn></msup></mrow></msqrt></math>
+is 2.2&nbsp;cents
+over as many as 32 partials.</p>
+</div>
+
+<h2>What each suspect turned out to be</h2>
+<div class="card">
+<table>
+<tr><th>Suspect</th><th>Verdict</th></tr>
+<tr><td>Inharmonicity is bell-sized</td><td><span class="up">Refuted as a
+law, confirmed as a coefficient.</span> The stiff-string series fits to 1–3
+cents. B at A4 is 6.5e−4, not 4e−4, and rises a decade every 31 semitones, not
+60 — so the treble is <em>more</em> stretched than the old preset, not less.
+What made the top sound bell-like was the partial count and the rolloff, not
+B.</td></tr>
+<tr><td>High partials ring far too long; the exponent should be nearer 2</td>
+<td><span class="dn">Refuted, and backwards.</span> Fitted per note, α<sub>n</sub>
+∝ n<sup>0.13</sup>. The largest slope seen on
+any of the 20 notes is
+0.52. The old 0.65 was already
+<em>above</em> the measurement; 2 is not close. What made notes ring was τ₁ and
+the aftersound mix, both of which were far too large.</td></tr>
+<tr><td>All partials start at identical phase</td><td><span class="up">Already
+false in the offline renderer</span> — <code>voices.py</code> has drawn phases
+from a uniform distribution since the model was written. It is now a parameter
+(<code>partial_phase_spread</code>) and the browser workbench, which really did
+start every partial at zero phase, now honours it.</td></tr>
+<tr><td>One string per note</td><td><span class="up">Already modelled</span>, and
+now measured. Beating is present from MIDI&nbsp;60 up (periodogram concentration
+0.34) and absent below 48
+(0.013) — exactly where the strings go to
+single wound ones. Detune 1.52¢ and depth
+0.43, both measured, against 0.7¢ and 0.40
+guessed.</td></tr>
+<tr><td>No soundboard or radiation filtering</td><td><span class="dn">Not
+identifiable, and deliberately not added.</span> See below.</td></tr>
+<tr><td>Aliasing</td><td><span class="dn">Refuted, quantitatively.</span> The
+partial series is band-limited before synthesis. Rendering MIDI 96–108 at
+48&nbsp;kHz and integrating the spectrum above 22.8&nbsp;kHz gives 3&times;10<sup>−17</sup>
+of the total with the hammer burst off — numerical noise. The residual
+10<sup>−9</sup>–10<sup>−6</sup> with it on is the burst's own bandwidth, which is
+generated at the sample rate and is not folded.</td></tr>
+<tr><td>The damper ignores frequency</td><td><span class="up">Confirmed, and it
+was a real bug.</span> The damper was applied to the summed buffer, so a note
+under the felt kept its high partials at full relative weight to silence. Now
+per partial, at α<sub>n</sub> = α₁·n<sup>q</sup>.</td></tr>
+</table>
+</div>
+
+<h2>Inharmonicity</h2>
+<div class="two">
+<div class="card"><svg viewBox="0 0 490 270" width="100%" role="img" aria-label="inharmonicity against pitch" style="display:block"><rect width="490" height="270" fill="#12171e" rx="8"/><line x1="66.6" y1="10" x2="66.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="66.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C1</text><line x1="125.1" y1="10" x2="125.1" y2="236" stroke="#2a323d" stroke-width="1"/><text x="125.1" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C2</text><line x1="183.6" y1="10" x2="183.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="183.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C3</text><line x1="242.1" y1="10" x2="242.1" y2="236" stroke="#2a323d" stroke-width="1"/><text x="242.1" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C4</text><line x1="300.6" y1="10" x2="300.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="300.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C5</text><line x1="359.0" y1="10" x2="359.0" y2="236" stroke="#2a323d" stroke-width="1"/><text x="359.0" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C6</text><line x1="417.5" y1="10" x2="417.5" y2="236" stroke="#2a323d" stroke-width="1"/><text x="417.5" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C7</text><line x1="52" y1="213.4" x2="476" y2="213.4" stroke="#2a323d" stroke-width="1"/><text x="46" y="216.9" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">1e−4</text><line x1="52" y1="164.9" x2="476" y2="164.9" stroke="#2a323d" stroke-width="1"/><text x="46" y="168.4" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">3e−4</text><line x1="52" y1="111.7" x2="476" y2="111.7" stroke="#2a323d" stroke-width="1"/><text x="46" y="115.2" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">1e−3</text><line x1="52" y1="63.2" x2="476" y2="63.2" stroke="#2a323d" stroke-width="1"/><text x="46" y="66.7" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">3e−3</text><path d="M52.0,233.6 L56.9,231.9 L61.7,230.2 L66.6,228.5 L71.5,226.8 L76.4,225.1 L81.2,223.4 L86.1,221.7 L91.0,220.0 L95.9,218.3 L100.7,216.6 L105.6,214.9 L110.5,213.2 L115.4,211.5 L120.2,209.8 L125.1,208.1 L130.0,206.4 L134.9,204.7 L139.7,203.1 L144.6,201.4 L149.5,199.7 L154.3,198.0 L159.2,196.3 L164.1,194.6 L169.0,192.9 L173.8,191.2 L178.7,189.5 L183.6,187.8 L188.5,186.1 L193.3,184.4 L198.2,182.7 L203.1,181.0 L208.0,179.3 L212.8,177.6 L217.7,175.9 L222.6,174.2 L227.4,172.5 L232.3,170.8 L237.2,169.1 L242.1,167.5 L246.9,165.8 L251.8,164.1 L256.7,162.4 L261.6,160.7 L266.4,159.0 L271.3,157.3 L276.2,155.6 L281.1,153.9 L285.9,152.2 L290.8,150.5 L295.7,148.8 L300.6,147.1 L305.4,145.4 L310.3,143.7 L315.2,142.0 L320.0,140.3 L324.9,138.6 L329.8,136.9 L334.7,135.2 L339.5,133.5 L344.4,131.9 L349.3,130.2 L354.2,128.5 L359.0,126.8 L363.9,125.1 L368.8,123.4 L373.7,121.7 L378.5,120.0 L383.4,118.3 L388.3,116.6 L393.1,114.9 L398.0,113.2 L402.9,111.5 L407.8,109.8 L412.6,108.1 L417.5,106.4 L422.4,104.7 L427.3,103.0 L432.1,101.3 L437.0,99.6 L441.9,97.9 L446.8,96.2 L451.6,94.6 L456.5,92.9 L461.4,91.2 L466.3,89.5 L471.1,87.8 L476.0,86.1" fill="none" stroke="#e08a8a" stroke-width="1.6" stroke-dasharray="5 4" opacity="1.0"/><path d="M52.0,199.0 L56.9,199.0 L61.7,199.0 L66.6,199.0 L71.5,199.0 L76.4,199.0 L81.2,199.0 L86.1,199.0 L91.0,199.0 L95.9,199.0 L100.7,199.0 L105.6,199.0 L110.5,199.0 L115.4,199.0 L120.2,199.0 L125.1,199.0 L130.0,199.0 L134.9,199.0 L139.7,199.0 L144.6,199.0 L149.5,199.0 L154.3,199.0 L159.2,199.0 L164.1,199.0 L169.0,199.0 L173.8,199.0 L178.7,199.0 L183.6,199.0 L188.5,196.3 L193.3,193.1 L198.2,189.8 L203.1,186.5 L208.0,183.2 L212.8,180.0 L217.7,176.7 L222.6,173.4 L227.4,170.2 L232.3,166.9 L237.2,163.6 L242.1,160.3 L246.9,157.1 L251.8,153.8 L256.7,150.5 L261.6,147.3 L266.4,144.0 L271.3,140.7 L276.2,137.4 L281.1,134.2 L285.9,130.9 L290.8,127.6 L295.7,124.4 L300.6,121.1 L305.4,117.8 L310.3,114.5 L315.2,111.3 L320.0,108.0 L324.9,104.7 L329.8,101.4 L334.7,98.2 L339.5,94.9 L344.4,91.6 L349.3,88.4 L354.2,85.1 L359.0,81.8 L363.9,78.5 L368.8,75.3 L373.7,72.0 L378.5,68.7 L383.4,65.5 L388.3,62.2 L393.1,58.9 L398.0,55.6 L402.9,52.4 L407.8,49.1 L412.6,45.8 L417.5,42.6 L422.4,39.3 L427.3,36.0 L432.1,32.7 L437.0,29.5 L441.9,26.2 L446.8,22.9 L451.6,19.7 L456.5,16.4 L461.4,13.1 L466.3,9.8 L471.1,6.6 L476.0,3.3" fill="none" stroke="#7ee0d6" stroke-width="2.0" opacity="1.0"/><circle cx="242.1" cy="161.0" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="300.6" cy="106.9" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="359.0" cy="79.0" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="95.9" cy="198.4" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="154.3" cy="190.5" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="212.8" cy="189.9" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="271.3" cy="126.6" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="329.8" cy="106.3" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="388.3" cy="96.2" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="66.6" cy="173.1" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="125.1" cy="200.0" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="183.6" cy="206.8" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="242.1" cy="160.9" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="300.6" cy="115.3" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="359.0" cy="72.6" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="95.9" cy="203.4" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="154.3" cy="197.7" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="212.8" cy="187.2" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="271.3" cy="136.7" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="329.8" cy="83.7" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="388.3" cy="102.2" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="66.6" cy="173.5" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="125.1" cy="200.2" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="183.6" cy="206.7" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="242.1" cy="162.6" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="300.6" cy="109.8" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="359.0" cy="68.2" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="95.9" cy="204.1" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="154.3" cy="197.6" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="212.8" cy="187.3" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="271.3" cy="136.0" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="329.8" cy="87.2" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="388.3" cy="52.9" r="3.1" fill="#f0b45e" opacity="0.95"/><text x="13" y="135" fill="#9aa7b4" font-size="11" text-anchor="middle" transform="rotate(-90 13 135)" font-family="ui-monospace,Menlo,monospace">B</text><text x="264" y="268" fill="#9aa7b4" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">MIDI note</text></svg>
+<div class="legend"><span><i style="background:#7ee0d6"></i>fitted: 6.5e−4 at A4, a decade per 31 semitones, floored at 1.4e−4</span><span><i style="background:linear-gradient(90deg,#e08a8a 55%,transparent 55%);height:3px;border-radius:1px"></i>guessed: 4e−4 at A4, a decade per 60</span></div>
+<div class="legend"><span><i style="background:#8ab4f8"></i>pp</span><span><i style="background:#7ee0d6"></i>mf</span><span><i style="background:#f0b45e"></i>ff</span></div>
+<p class="cap">Each dot is one recorded note. The dashed red line is the law the
+preset used; the solid line is the fitted one. Note the bass: below the break the
+exponential extrapolates sixteen times too small, so the fitted law floors at
+1.39e-04. C1 measures 2.5e−4 and sits above even
+that — a documented residual, not a fitted point.</p></div>
+<div class="card">
+<p>The stiff-string law rearranges to something linear, which is why it can be
+fitted without iteration and why its residual is interpretable:</p>
+<div class="eq"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><mrow><msup><mrow><mo>(</mo><mfrac><msub><mi>f</mi><mi>n</mi></msub><mi>n</mi></mfrac><mo>)</mo></mrow><mn>2</mn></msup><mo>=</mo><msubsup><mi>f</mi><mn>0</mn><mn>2</mn></msubsup><mo>+</mo><msubsup><mi>f</mi><mn>0</mn><mn>2</mn></msubsup><mi>B</mi><msup><mi>n</mi><mn>2</mn></msup></mrow></math></div>
+<p>Regress the left side on <math xmlns="http://www.w3.org/1998/Math/MathML"><msup><mi>n</mi><mn>2</mn></msup></math>
+and the intercept is <math xmlns="http://www.w3.org/1998/Math/MathML"><msubsup><mi>f</mi><mn>0</mn><mn>2</mn></msubsup></math>,
+the slope is <math xmlns="http://www.w3.org/1998/Math/MathML"><msubsup><mi>f</mi><mn>0</mn><mn>2</mn></msubsup><mi>B</mi></math>,
+and the residual is a direct test of whether <em>any</em> stiff-string law
+describes the note. It does: 2.2
+cents median.</p>
+<p>Across pitch, <math xmlns="http://www.w3.org/1998/Math/MathML"><msub><mi>log</mi><mn>10</mn></msub><mi>B</mi></math>
+is linear with slope 0.386 ±
+0.027 decades per octave over
+23 notes, scatter a factor of
+1.38.</p>
+</div>
+</div>
+
+<h2>The spectrum, which is where the noise was coming from</h2>
+<div class="two">
+<div class="card"><svg viewBox="0 0 490 270" width="100%" role="img" aria-label="rolloff exponent against pitch" style="display:block"><rect width="490" height="270" fill="#12171e" rx="8"/><line x1="66.6" y1="10" x2="66.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="66.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C1</text><line x1="125.1" y1="10" x2="125.1" y2="236" stroke="#2a323d" stroke-width="1"/><text x="125.1" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C2</text><line x1="183.6" y1="10" x2="183.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="183.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C3</text><line x1="242.1" y1="10" x2="242.1" y2="236" stroke="#2a323d" stroke-width="1"/><text x="242.1" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C4</text><line x1="300.6" y1="10" x2="300.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="300.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C5</text><line x1="359.0" y1="10" x2="359.0" y2="236" stroke="#2a323d" stroke-width="1"/><text x="359.0" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C6</text><line x1="417.5" y1="10" x2="417.5" y2="236" stroke="#2a323d" stroke-width="1"/><text x="417.5" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C7</text><line x1="52" y1="215.5" x2="476" y2="215.5" stroke="#2a323d" stroke-width="1"/><text x="46" y="219.0" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">0</text><line x1="52" y1="181.2" x2="476" y2="181.2" stroke="#2a323d" stroke-width="1"/><text x="46" y="184.7" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">1</text><line x1="52" y1="147.0" x2="476" y2="147.0" stroke="#2a323d" stroke-width="1"/><text x="46" y="150.5" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">2</text><line x1="52" y1="112.7" x2="476" y2="112.7" stroke="#2a323d" stroke-width="1"/><text x="46" y="116.2" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">3</text><line x1="52" y1="78.5" x2="476" y2="78.5" stroke="#2a323d" stroke-width="1"/><text x="46" y="82.0" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">4</text><line x1="52" y1="44.2" x2="476" y2="44.2" stroke="#2a323d" stroke-width="1"/><text x="46" y="47.7" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">5</text><path d="M52.0,172.7 L56.9,172.7 L61.7,172.7 L66.6,172.7 L71.5,172.7 L76.4,172.7 L81.2,172.7 L86.1,172.7 L91.0,172.7 L95.9,172.7 L100.7,172.7 L105.6,172.7 L110.5,172.7 L115.4,172.7 L120.2,172.7 L125.1,172.7 L130.0,172.7 L134.9,172.7 L139.7,172.7 L144.6,172.7 L149.5,172.7 L154.3,172.7 L159.2,172.7 L164.1,172.7 L169.0,172.7 L173.8,172.7 L178.7,172.7 L183.6,172.7 L188.5,172.7 L193.3,172.7 L198.2,172.7 L203.1,172.7 L208.0,172.7 L212.8,172.7 L217.7,172.7 L222.6,172.7 L227.4,172.7 L232.3,172.7 L237.2,172.7 L242.1,172.7 L246.9,172.7 L251.8,172.7 L256.7,172.7 L261.6,172.7 L266.4,172.7 L271.3,172.7 L276.2,172.7 L281.1,172.7 L285.9,172.7 L290.8,172.7 L295.7,172.7 L300.6,172.7 L305.4,172.7 L310.3,172.7 L315.2,172.7 L320.0,172.7 L324.9,172.7 L329.8,172.7 L334.7,172.7 L339.5,172.7 L344.4,172.7 L349.3,172.7 L354.2,172.7 L359.0,172.7 L363.9,172.7 L368.8,172.7 L373.7,172.7 L378.5,172.7 L383.4,172.7 L388.3,172.7 L393.1,172.7 L398.0,172.7 L402.9,172.7 L407.8,172.7 L412.6,172.7 L417.5,172.7 L422.4,172.7 L427.3,172.7 L432.1,172.7 L437.0,172.7 L441.9,172.7 L446.8,172.7 L451.6,172.7 L456.5,172.7 L461.4,172.7 L466.3,172.7 L471.1,172.7 L476.0,172.7" fill="none" stroke="#e08a8a" stroke-width="1.6" stroke-dasharray="5 4" opacity="1.0"/><path d="M52.0,200.2 L56.9,198.3 L61.7,196.5 L66.6,194.7 L71.5,192.8 L76.4,191.0 L81.2,189.2 L86.1,187.3 L91.0,185.5 L95.9,183.7 L100.7,181.8 L105.6,180.0 L110.5,178.2 L115.4,176.3 L120.2,174.5 L125.1,172.7 L130.0,170.8 L134.9,169.0 L139.7,167.2 L144.6,165.3 L149.5,163.5 L154.3,161.7 L159.2,159.8 L164.1,158.0 L169.0,156.1 L173.8,154.3 L178.7,152.5 L183.6,150.6 L188.5,148.8 L193.3,147.0 L198.2,145.1 L203.1,143.3 L208.0,141.5 L212.8,139.6 L217.7,137.8 L222.6,136.0 L227.4,134.1 L232.3,132.3 L237.2,130.5 L242.1,128.6 L246.9,126.8 L251.8,125.0 L256.7,123.1 L261.6,121.3 L266.4,119.5 L271.3,117.6 L276.2,115.8 L281.1,113.9 L285.9,112.1 L290.8,110.3 L295.7,108.4 L300.6,106.6 L305.4,104.8 L310.3,102.9 L315.2,101.1 L320.0,99.3 L324.9,97.4 L329.8,95.6 L334.7,93.8 L339.5,91.9 L344.4,90.1 L349.3,88.3 L354.2,86.4 L359.0,84.6 L363.9,82.8 L368.8,80.9 L373.7,79.1 L378.5,77.2 L383.4,75.4 L388.3,73.6 L393.1,71.7 L398.0,69.9 L402.9,68.1 L407.8,66.2 L412.6,64.4 L417.5,62.6 L422.4,60.7 L427.3,58.9 L432.1,57.1 L437.0,55.2 L441.9,53.4 L446.8,51.6 L451.6,49.7 L456.5,47.9 L461.4,46.1 L466.3,44.2 L471.1,42.4 L476.0,40.6" fill="none" stroke="#7ee0d6" stroke-width="2.0" opacity="1.0"/><circle cx="242.1" cy="122.5" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="300.6" cy="122.5" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="95.9" cy="179.1" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="154.3" cy="151.2" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="212.8" cy="133.1" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="329.8" cy="141.8" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="242.1" cy="117.0" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="300.6" cy="91.7" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="212.8" cy="126.2" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="271.3" cy="106.8" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="329.8" cy="77.3" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="242.1" cy="158.9" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="300.6" cy="125.1" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="359.0" cy="43.5" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="212.8" cy="163.2" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="271.3" cy="119.3" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="329.8" cy="102.1" r="3.1" fill="#f0b45e" opacity="0.95"/><text x="13" y="135" fill="#9aa7b4" font-size="11" text-anchor="middle" transform="rotate(-90 13 135)" font-family="ui-monospace,Menlo,monospace">rolloff k</text><text x="264" y="268" fill="#9aa7b4" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">MIDI note</text></svg>
+<div class="legend"><span><i style="background:#7ee0d6"></i>fitted: 3.02 at A4, +0.64 per octave</span><span><i style="background:linear-gradient(90deg,#e08a8a 55%,transparent 55%);height:3px;border-radius:1px"></i>guessed: 1.25, flat across the keyboard</span></div>
+<div class="legend"><span><i style="background:#8ab4f8"></i>pp</span><span><i style="background:#7ee0d6"></i>mf</span><span><i style="background:#f0b45e"></i>ff</span></div>
+<p class="cap">The rolloff exponent, fitted per note on the upper envelope of
+the partial amplitudes (partials sitting in a hammer-strike notch are not
+evidence about the tilt of the spectrum, so the fit takes the loudest partial in
+each half-octave band of n). One number for the keyboard cannot be right: the
+bass is nearly flat and the top two octaves are four times steeper.</p></div>
+<div class="card"><svg viewBox="0 0 490 270" width="100%" role="img" aria-label="audible partial count against pitch" style="display:block"><rect width="490" height="270" fill="#12171e" rx="8"/><line x1="66.6" y1="10" x2="66.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="66.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C1</text><line x1="125.1" y1="10" x2="125.1" y2="236" stroke="#2a323d" stroke-width="1"/><text x="125.1" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C2</text><line x1="183.6" y1="10" x2="183.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="183.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C3</text><line x1="242.1" y1="10" x2="242.1" y2="236" stroke="#2a323d" stroke-width="1"/><text x="242.1" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C4</text><line x1="300.6" y1="10" x2="300.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="300.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C5</text><line x1="359.0" y1="10" x2="359.0" y2="236" stroke="#2a323d" stroke-width="1"/><text x="359.0" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C6</text><line x1="417.5" y1="10" x2="417.5" y2="236" stroke="#2a323d" stroke-width="1"/><text x="417.5" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C7</text><line x1="52" y1="236.0" x2="476" y2="236.0" stroke="#2a323d" stroke-width="1"/><text x="46" y="239.5" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">0</text><line x1="52" y1="182.8" x2="476" y2="182.8" stroke="#2a323d" stroke-width="1"/><text x="46" y="186.3" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">8</text><line x1="52" y1="129.6" x2="476" y2="129.6" stroke="#2a323d" stroke-width="1"/><text x="46" y="133.1" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">16</text><line x1="52" y1="76.5" x2="476" y2="76.5" stroke="#2a323d" stroke-width="1"/><text x="46" y="80.0" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">24</text><line x1="52" y1="23.3" x2="476" y2="23.3" stroke="#2a323d" stroke-width="1"/><text x="46" y="26.8" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">32</text><path d="M52.0,49.9 L476.0,49.9" fill="none" stroke="#e08a8a" stroke-width="1.6" stroke-dasharray="5 4" opacity="1.0"/><circle cx="125.1" cy="202.8" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="183.6" cy="202.8" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="242.1" cy="182.8" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="300.6" cy="182.8" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="359.0" cy="196.1" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="417.5" cy="222.7" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="95.9" cy="149.6" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="154.3" cy="142.9" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="212.8" cy="136.3" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="271.3" cy="189.5" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="329.8" cy="169.5" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="388.3" cy="196.1" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="66.6" cy="49.9" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="125.1" cy="23.3" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="183.6" cy="96.4" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="242.1" cy="176.2" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="300.6" cy="202.8" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="359.0" cy="216.1" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="417.5" cy="222.7" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="95.9" cy="23.3" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="154.3" cy="76.5" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="212.8" cy="136.3" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="271.3" cy="182.8" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="329.8" cy="202.8" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="388.3" cy="222.7" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="66.6" cy="23.3" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="125.1" cy="23.3" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="183.6" cy="23.3" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="242.1" cy="76.5" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="300.6" cy="169.5" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="359.0" cy="209.4" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="417.5" cy="222.7" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="95.9" cy="29.9" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="154.3" cy="23.3" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="212.8" cy="56.5" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="271.3" cy="129.6" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="329.8" cy="182.8" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="388.3" cy="209.4" r="3.1" fill="#f0b45e" opacity="0.95"/><text x="13" y="135" fill="#9aa7b4" font-size="11" text-anchor="middle" transform="rotate(-90 13 135)" font-family="ui-monospace,Menlo,monospace">partials</text><text x="264" y="268" fill="#9aa7b4" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">MIDI note</text></svg>
+<div class="legend"><span><i style="background:linear-gradient(90deg,#e08a8a 55%,transparent 55%);height:3px;border-radius:1px"></i>the old preset synthesised 28 for every key</span></div>
+<div class="legend"><span><i style="background:#8ab4f8"></i>pp</span><span><i style="background:#7ee0d6"></i>mf</span><span><i style="background:#f0b45e"></i>ff</span></div>
+<p class="cap">The same fact seen directly. Counting partials within 60 dB of
+the loudest: 32 in the bass, 8–16 in the middle, 2–6 above C6. The old preset
+built 28 for every key.</p></div>
+</div>
+
+<div class="two">
+<div class="card"><svg viewBox="0 0 490 280" width="100%" role="img" aria-label="measured against modelled spectrum at C4 ff" style="display:block"><rect width="490" height="280" fill="#12171e" rx="8"/><line x1="90.9" y1="10" x2="90.9" y2="246" stroke="#2a323d" stroke-width="1"/><text x="90.9" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">1</text><line x1="166.6" y1="10" x2="166.6" y2="246" stroke="#2a323d" stroke-width="1"/><text x="166.6" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">2</text><line x1="242.3" y1="10" x2="242.3" y2="246" stroke="#2a323d" stroke-width="1"/><text x="242.3" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">4</text><line x1="318.0" y1="10" x2="318.0" y2="246" stroke="#2a323d" stroke-width="1"/><text x="318.0" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">8</text><line x1="393.7" y1="10" x2="393.7" y2="246" stroke="#2a323d" stroke-width="1"/><text x="393.7" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">16</text><line x1="469.4" y1="10" x2="469.4" y2="246" stroke="#2a323d" stroke-width="1"/><text x="469.4" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">32</text><line x1="52" y1="21.2" x2="476" y2="21.2" stroke="#2a323d" stroke-width="1"/><text x="46" y="24.7" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">0</text><line x1="52" y1="77.4" x2="476" y2="77.4" stroke="#2a323d" stroke-width="1"/><text x="46" y="80.9" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">-20</text><line x1="52" y1="133.6" x2="476" y2="133.6" stroke="#2a323d" stroke-width="1"/><text x="46" y="137.1" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">-40</text><line x1="52" y1="189.8" x2="476" y2="189.8" stroke="#2a323d" stroke-width="1"/><text x="46" y="193.3" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">-60</text><line x1="52" y1="246.0" x2="476" y2="246.0" stroke="#2a323d" stroke-width="1"/><text x="46" y="249.5" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">-80</text><path d="M90.9,28.7 L166.6,22.6 L210.9,21.2 L242.3,23.0 L266.7,27.8 L286.6,36.7 L303.4,53.6 L330.9,56.8 L342.4,43.2 L352.8,37.9 L362.3,37.1 L371.0,40.0 L379.1,47.5 L386.6,63.4 L400.3,65.0 L406.6,50.7 L412.5,44.9 L418.1,43.6 L423.4,46.2 L428.5,53.3 L433.3,68.9 L442.4,69.9 L446.7,55.5 L450.8,49.4 L454.8,47.9 L458.6,50.3 L462.3,57.3 L465.9,72.7" fill="none" stroke="#e08a8a" stroke-width="1.5" stroke-dasharray="5 4" opacity="1.0"/><path d="M90.9,21.2 L166.6,36.7 L210.9,47.7 L242.3,57.9 L266.7,68.7 L286.6,81.6 L303.4,99.0 L318.0,132.8 L330.9,132.1 L342.4,113.0 L352.8,107.5 L362.3,107.1 L371.0,110.1 L379.1,116.4 L386.6,127.0 L393.7,146.8 L400.3,197.2 L406.6,146.3 L412.5,135.0 L418.1,131.1 L423.4,131.1 L428.5,134.6 L433.3,141.9 L438.0,155.4 L442.4,191.1 L446.7,174.2 L450.8,155.3 L454.8,148.1 L458.6,145.9 L462.3,147.3 L465.9,152.2 L469.4,161.9" fill="none" stroke="#7ee0d6" stroke-width="1.9" opacity="1.0"/><line x1="90.9" y1="246.0" x2="90.9" y2="21.2" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="166.6" y1="246.0" x2="166.6" y2="61.0" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="210.9" y1="246.0" x2="210.9" y2="86.6" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="242.3" y1="246.0" x2="242.3" y2="99.9" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="266.7" y1="246.0" x2="266.7" y2="94.6" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="286.6" y1="246.0" x2="286.6" y2="89.0" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="303.4" y1="246.0" x2="303.4" y2="77.3" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="318.0" y1="246.0" x2="318.0" y2="96.9" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="330.9" y1="246.0" x2="330.9" y2="100.2" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="342.4" y1="246.0" x2="342.4" y2="99.6" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="352.8" y1="246.0" x2="352.8" y2="117.3" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="362.3" y1="246.0" x2="362.3" y2="133.5" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="371.0" y1="246.0" x2="371.0" y2="129.1" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="379.1" y1="246.0" x2="379.1" y2="146.5" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="386.6" y1="246.0" x2="386.6" y2="119.8" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="393.7" y1="246.0" x2="393.7" y2="140.9" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="400.3" y1="246.0" x2="400.3" y2="167.6" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="406.6" y1="246.0" x2="406.6" y2="180.1" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="412.5" y1="246.0" x2="412.5" y2="158.5" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="418.1" y1="246.0" x2="418.1" y2="161.5" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="423.4" y1="246.0" x2="423.4" y2="159.5" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="428.5" y1="246.0" x2="428.5" y2="216.5" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="433.3" y1="246.0" x2="433.3" y2="169.0" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="438.0" y1="246.0" x2="438.0" y2="187.6" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><line x1="446.7" y1="246.0" x2="446.7" y2="173.1" stroke="#e6edf3" stroke-width="2.2" opacity="0.55" stroke-linecap="round"/><text x="13" y="140" fill="#9aa7b4" font-size="11" text-anchor="middle" transform="rotate(-90 13 140)" font-family="ui-monospace,Menlo,monospace">dB</text><text x="264" y="278" fill="#9aa7b4" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">partial index n</text></svg>
+<div class="legend"><span><i style="background:#e6edf3"></i>measured C4 ff (bars)</span><span><i style="background:#7ee0d6"></i>fitted model</span><span><i style="background:linear-gradient(90deg,#e08a8a 55%,transparent 55%);height:3px;border-radius:1px"></i>guessed model</span></div>
+<p class="cap">C4 struck ff. Bars are the measured partial amplitudes,
+extrapolated back to the onset from each partial's own decay fit. The old model
+(dashed) is 15–25 dB too loud from the eighth partial up. The fitted one tracks
+the envelope, including the strike-point notch near n =
+8.</p></div>
+<div class="card">
+<p>Amplitude, with both corrections:</p>
+<div class="eq"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><mrow><msub><mi>a</mi><mi>n</mi></msub><mo>=</mo><msup><mi>n</mi><mrow><mo>&#x2212;</mo><mi>k</mi><mo>(</mo><mi>p</mi><mo>)</mo><mo>+</mo><mi>&#x03B2;</mi><mo>(</mo><mi>v</mi><mo>&#x2212;</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><mo>)</mo></mrow></msup><mo>&#x22C5;</mo><mrow><mo>|</mo><mi>sin</mi><mo>&#x2061;</mo><mi>n</mi><mi>&#x03C0;</mi><mi>&#x03B1;</mi><mo>|</mo></mrow></mrow></math></div>
+<div class="eq"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mi>k</mi><mo>(</mo><mi>p</mi><mo>)</mo><mo>=</mo><mn>3.02</mn><mo>+</mo><mn>0.64</mn><mo>&#x22C5;</mo><mfrac><mrow><mi>p</mi><mo>&#x2212;</mo><mn>69</mn></mrow><mn>12</mn></mfrac></mrow></math></div>
+<p>The strike point <math xmlns="http://www.w3.org/1998/Math/MathML"><mi>&#x03B1;</mi></math>
+is itself measured, not assumed: dividing the fitted tilt out of the measured
+amplitudes leaves a comb, and scanning for the α that best explains it gives
+0.1185 = 1/8.4
+over 24 notes — inside the 1/7 to 1/9 that real
+pianos use. The old constant 0.125 was already right, within the scatter.</p>
+<p>The velocity term β is the weakest of the fitted set:
+1.61 ±
+0.68 on
+8 notes. Its interval contains the old guess of
+1.3. It is wide because the Iowa recordings carry no velocity byte, only the
+words pp, mf and ff, and the mapping from those to a number is an assumption.</p>
+</div>
+</div>
+
+<h2>Decay — and where the model's form gives out</h2>
+<div class="two">
+<div class="card"><svg viewBox="0 0 490 270" width="100%" role="img" aria-label="prompt decay time against pitch" style="display:block"><rect width="490" height="270" fill="#12171e" rx="8"/><line x1="66.6" y1="10" x2="66.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="66.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C1</text><line x1="125.1" y1="10" x2="125.1" y2="236" stroke="#2a323d" stroke-width="1"/><text x="125.1" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C2</text><line x1="183.6" y1="10" x2="183.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="183.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C3</text><line x1="242.1" y1="10" x2="242.1" y2="236" stroke="#2a323d" stroke-width="1"/><text x="242.1" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C4</text><line x1="300.6" y1="10" x2="300.6" y2="236" stroke="#2a323d" stroke-width="1"/><text x="300.6" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C5</text><line x1="359.0" y1="10" x2="359.0" y2="236" stroke="#2a323d" stroke-width="1"/><text x="359.0" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C6</text><line x1="417.5" y1="10" x2="417.5" y2="236" stroke="#2a323d" stroke-width="1"/><text x="417.5" y="251" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">C7</text><line x1="52" y1="192.5" x2="476" y2="192.5" stroke="#2a323d" stroke-width="1"/><text x="46" y="196.0" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">0.3</text><line x1="52" y1="144.8" x2="476" y2="144.8" stroke="#2a323d" stroke-width="1"/><text x="46" y="148.3" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">1</text><line x1="52" y1="101.2" x2="476" y2="101.2" stroke="#2a323d" stroke-width="1"/><text x="46" y="104.7" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">3</text><line x1="52" y1="53.5" x2="476" y2="53.5" stroke="#2a323d" stroke-width="1"/><text x="46" y="57.0" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">10</text><path d="M52.0,55.1 L56.9,56.3 L61.7,57.4 L66.6,58.6 L71.5,59.7 L76.4,60.9 L81.2,62.0 L86.1,63.2 L91.0,64.3 L95.9,65.4 L100.7,66.6 L105.6,67.7 L110.5,68.9 L115.4,70.0 L120.2,71.2 L125.1,72.3 L130.0,73.5 L134.9,74.6 L139.7,75.7 L144.6,76.9 L149.5,78.0 L154.3,79.2 L159.2,80.3 L164.1,81.5 L169.0,82.6 L173.8,83.8 L178.7,84.9 L183.6,86.0 L188.5,87.2 L193.3,88.3 L198.2,89.5 L203.1,90.6 L208.0,91.8 L212.8,92.9 L217.7,94.1 L222.6,95.2 L227.4,96.3 L232.3,97.5 L237.2,98.6 L242.1,99.8 L246.9,100.9 L251.8,102.1 L256.7,103.2 L261.6,104.4 L266.4,105.5 L271.3,106.6 L276.2,107.8 L281.1,108.9 L285.9,110.1 L290.8,111.2 L295.7,112.4 L300.6,113.5 L305.4,114.7 L310.3,115.8 L315.2,116.9 L320.0,118.1 L324.9,119.2 L329.8,120.4 L334.7,121.5 L339.5,122.7 L344.4,123.8 L349.3,125.0 L354.2,126.1 L359.0,127.2 L363.9,128.4 L368.8,129.5 L373.7,130.7 L378.5,131.8 L383.4,133.0 L388.3,134.1 L393.1,135.3 L398.0,136.4 L402.9,137.5 L407.8,138.7 L412.6,139.8 L417.5,141.0 L422.4,142.1 L427.3,143.3 L432.1,144.4 L437.0,145.6 L441.9,146.7 L446.8,147.8 L451.6,149.0 L456.5,150.1 L461.4,151.3 L466.3,152.4 L471.1,153.6 L476.0,154.7" fill="none" stroke="#e08a8a" stroke-width="1.6" stroke-dasharray="5 4" opacity="1.0"/><path d="M52.0,71.3 L56.9,73.1 L61.7,74.9 L66.6,76.6 L71.5,78.4 L76.4,80.2 L81.2,82.0 L86.1,83.7 L91.0,85.5 L95.9,87.3 L100.7,89.0 L105.6,90.8 L110.5,92.6 L115.4,94.4 L120.2,96.1 L125.1,97.9 L130.0,99.7 L134.9,101.4 L139.7,103.2 L144.6,105.0 L149.5,106.8 L154.3,108.5 L159.2,110.3 L164.1,112.1 L169.0,113.9 L173.8,115.6 L178.7,117.4 L183.6,119.2 L188.5,120.9 L193.3,122.7 L198.2,124.5 L203.1,126.3 L208.0,128.0 L212.8,129.8 L217.7,131.6 L222.6,133.3 L227.4,135.1 L232.3,136.9 L237.2,138.7 L242.1,140.4 L246.9,142.2 L251.8,144.0 L256.7,145.7 L261.6,147.5 L266.4,149.3 L271.3,151.1 L276.2,152.8 L281.1,154.6 L285.9,156.4 L290.8,158.1 L295.7,159.9 L300.6,161.7 L305.4,163.5 L310.3,165.2 L315.2,167.0 L320.0,168.8 L324.9,170.6 L329.8,172.3 L334.7,174.1 L339.5,175.9 L344.4,177.6 L349.3,179.4 L354.2,181.2 L359.0,183.0 L363.9,184.7 L368.8,186.5 L373.7,188.3 L378.5,190.0 L383.4,191.8 L388.3,193.6 L393.1,195.4 L398.0,197.1 L402.9,198.9 L407.8,200.7 L412.6,202.4 L417.5,204.2 L422.4,206.0 L427.3,207.8 L432.1,209.5 L437.0,211.3 L441.9,213.1 L446.8,214.8 L451.6,216.6 L456.5,218.4 L461.4,220.2 L466.3,221.9 L471.1,223.7 L476.0,225.5" fill="none" stroke="#7ee0d6" stroke-width="2.0" opacity="1.0"/><circle cx="125.1" cy="205.9" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="183.6" cy="150.4" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="242.1" cy="150.1" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="300.6" cy="154.5" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="359.0" cy="122.1" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="417.5" cy="118.1" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="95.9" cy="62.2" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="154.3" cy="83.7" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="212.8" cy="130.2" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="271.3" cy="120.1" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="329.8" cy="153.5" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="388.3" cy="118.0" r="3.1" fill="#8ab4f8" opacity="0.95"/><circle cx="66.6" cy="78.0" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="125.1" cy="90.9" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="183.6" cy="150.1" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="242.1" cy="198.3" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="300.6" cy="155.4" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="359.0" cy="166.0" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="417.5" cy="181.1" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="95.9" cy="45.2" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="154.3" cy="87.6" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="212.8" cy="143.2" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="271.3" cy="153.8" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="329.8" cy="153.4" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="388.3" cy="184.0" r="3.1" fill="#7ee0d6" opacity="0.95"/><circle cx="66.6" cy="74.2" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="125.1" cy="89.2" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="183.6" cy="123.9" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="242.1" cy="195.5" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="300.6" cy="161.6" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="359.0" cy="176.1" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="417.5" cy="192.7" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="95.9" cy="61.8" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="154.3" cy="90.6" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="212.8" cy="145.8" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="271.3" cy="202.9" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="329.8" cy="159.1" r="3.1" fill="#f0b45e" opacity="0.95"/><circle cx="388.3" cy="190.6" r="3.1" fill="#f0b45e" opacity="0.95"/><text x="13" y="135" fill="#9aa7b4" font-size="11" text-anchor="middle" transform="rotate(-90 13 135)" font-family="ui-monospace,Menlo,monospace">τ₁ (s)</text><text x="264" y="268" fill="#9aa7b4" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">MIDI note</text></svg>
+<div class="legend"><span><i style="background:#7ee0d6"></i>fitted: 0.75 s at A4, halving every 15.5 semitones</span><span><i style="background:linear-gradient(90deg,#e08a8a 55%,transparent 55%);height:3px;border-radius:1px"></i>guessed: 2.4 s, halving every 24</span></div>
+<div class="legend"><span><i style="background:#8ab4f8"></i>pp</span><span><i style="background:#7ee0d6"></i>mf</span><span><i style="background:#f0b45e"></i>ff</span></div>
+<p class="cap">τ₁ from the first 25 dB of the fundamental's decay. The 25 dB
+matters: the recording is <em>not</em> anechoic, and once a partial has fallen
+far enough the microphone is hearing the room decay rather than the string.
+Scatter about the line is 0.89 octaves, which is large and real — neighbouring
+keys on a piano differ by that much.</p></div>
+<div class="card warnbox"><svg viewBox="0 0 490 280" width="100%" role="img" aria-label="per-partial decay rate against partial index" style="display:block"><rect width="490" height="280" fill="#12171e" rx="8"/><line x1="90.9" y1="10" x2="90.9" y2="246" stroke="#2a323d" stroke-width="1"/><text x="90.9" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">1</text><line x1="166.6" y1="10" x2="166.6" y2="246" stroke="#2a323d" stroke-width="1"/><text x="166.6" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">2</text><line x1="242.3" y1="10" x2="242.3" y2="246" stroke="#2a323d" stroke-width="1"/><text x="242.3" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">4</text><line x1="318.0" y1="10" x2="318.0" y2="246" stroke="#2a323d" stroke-width="1"/><text x="318.0" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">8</text><line x1="393.7" y1="10" x2="393.7" y2="246" stroke="#2a323d" stroke-width="1"/><text x="393.7" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">16</text><line x1="469.4" y1="10" x2="469.4" y2="246" stroke="#2a323d" stroke-width="1"/><text x="469.4" y="261" fill="#6e7d8c" font-size="10.5" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">32</text><line x1="52" y1="237.5" x2="476" y2="237.5" stroke="#2a323d" stroke-width="1"/><text x="46" y="241.0" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">0.1</text><line x1="52" y1="150.1" x2="476" y2="150.1" stroke="#2a323d" stroke-width="1"/><text x="46" y="153.6" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">1</text><line x1="52" y1="62.6" x2="476" y2="62.6" stroke="#2a323d" stroke-width="1"/><text x="46" y="66.1" fill="#6e7d8c" font-size="10.5" text-anchor="end" font-family="ui-monospace,Menlo,monospace">10</text><circle cx="90.9" cy="203.4" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="166.6" cy="144.0" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="210.9" cy="81.3" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="242.3" cy="185.7" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="303.4" cy="198.2" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="342.4" cy="180.6" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="352.8" cy="161.7" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="362.3" cy="172.5" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="371.0" cy="189.6" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="386.6" cy="196.3" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="393.7" cy="188.6" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="400.3" cy="178.2" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="406.6" cy="192.5" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="412.5" cy="173.8" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="418.1" cy="187.2" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="423.4" cy="184.4" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="428.5" cy="179.9" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="433.3" cy="169.8" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="438.0" cy="177.6" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="450.8" cy="156.1" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="454.8" cy="168.7" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="458.6" cy="164.0" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="462.3" cy="169.8" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="465.9" cy="162.5" r="3.0" fill="#8ab4f8" opacity="0.95"/><circle cx="469.4" cy="162.7" r="3.0" fill="#8ab4f8" opacity="0.95"/><path d="M90.9,203.4 L469.4,186.7" fill="none" stroke="#8ab4f8" stroke-width="1.3" stroke-dasharray="3 3" opacity="1.0"/><circle cx="90.9" cy="149.1" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="166.6" cy="180.7" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="210.9" cy="147.3" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="242.3" cy="156.2" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="266.7" cy="130.1" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="286.6" cy="149.4" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="303.4" cy="163.1" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="318.0" cy="147.8" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="330.9" cy="138.5" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="342.4" cy="139.5" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="352.8" cy="162.3" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="362.3" cy="148.0" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="371.0" cy="155.7" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="386.6" cy="112.0" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="393.7" cy="140.7" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="400.3" cy="141.2" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="406.6" cy="131.3" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="412.5" cy="126.5" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="423.4" cy="125.1" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="433.3" cy="106.0" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="446.7" cy="114.1" r="3.0" fill="#7ee0d6" opacity="0.95"/><circle cx="454.8" cy="90.7" r="3.0" fill="#7ee0d6" opacity="0.95"/><path d="M90.9,149.1 L469.4,132.4" fill="none" stroke="#7ee0d6" stroke-width="1.3" stroke-dasharray="3 3" opacity="1.0"/><circle cx="90.9" cy="101.4" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="210.9" cy="144.2" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="286.6" cy="138.6" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="303.4" cy="137.4" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="318.0" cy="129.6" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="330.9" cy="130.9" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="342.4" cy="117.4" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="352.8" cy="125.8" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="362.3" cy="116.3" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="379.1" cy="117.1" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="386.6" cy="100.8" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="400.3" cy="107.5" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="412.5" cy="93.8" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="418.1" cy="94.0" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="423.4" cy="98.7" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="428.5" cy="120.0" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="433.3" cy="95.5" r="3.0" fill="#f0b45e" opacity="0.95"/><circle cx="446.7" cy="93.7" r="3.0" fill="#f0b45e" opacity="0.95"/><path d="M90.9,101.4 L469.4,84.7" fill="none" stroke="#f0b45e" stroke-width="1.3" stroke-dasharray="3 3" opacity="1.0"/><path d="M90.9,101.4 L469.4,-161.8" fill="none" stroke="#e08a8a" stroke-width="1.6" opacity="1.0"/><path d="M90.9,101.4 L469.4,15.9" fill="none" stroke="#e08a8a" stroke-width="1.6" stroke-dasharray="6 4" opacity="1.0"/><text x="13" y="140" fill="#9aa7b4" font-size="11" text-anchor="middle" transform="rotate(-90 13 140)" font-family="ui-monospace,Menlo,monospace">αₙ (1/s)</text><text x="264" y="278" fill="#9aa7b4" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">partial index n</text></svg>
+<div class="legend"><span><i style="background:#8ab4f8"></i>C2 ff</span><span><i style="background:#7ee0d6"></i>F♯3 ff</span><span><i style="background:#f0b45e"></i>C4 ff</span><span><i style="background:#e08a8a"></i>αₙ ∝ n² — stiffness-proportional damping</span><span><i style="background:linear-gradient(90deg,#e08a8a 55%,transparent 55%);height:3px;border-radius:1px"></i>αₙ ∝ n^0.65 — the old preset</span></div>
+<p class="cap"><b>This is the plot that says the model is wrong.</b> Each dot is
+one partial's fitted decay rate. If damping were stiffness-proportional the
+points would follow the solid red line, α<sub>n</sub> ∝ n². If the old preset
+were right they would follow the dashed one. They follow neither, and they do
+not follow a power law at all: fitted per note over 20 notes, the
+median exponent is 0.127 and the power law's
+median R² is <b>0.10</b>.</p></div>
+</div>
+
+<div class="card warnbox">
+<h3>The functional form cannot fit this data</h3>
+<p>The model writes
+<math xmlns="http://www.w3.org/1998/Math/MathML"><msub><mi>&#x03C4;</mi><mi>n</mi></msub><mo>=</mo><msub><mi>&#x03C4;</mi><mn>1</mn></msub><msup><mi>n</mi><mrow><mo>&#x2212;</mo><mi>e</mi></mrow></msup></math>.
+Fitted note by note it explains a median 10% of the variance in
+per-partial decay rate, and in
+5% of notes more than
+half. The scatter is not measurement noise — adjacent partials of a single note
+differ by a factor of two in either direction, with fit R² above 0.8 on each of
+them individually. It is bridge and soundboard coupling, which is mode by mode
+and irregular, and a smooth power law in n has no way to represent it.</p>
+<p>So 0.127 is the best single number, and it
+is a weak law rather than a strong one. Reproducing what a real piano does here
+would need a per-partial admittance, not a better exponent. That is a bigger
+change than this pass, and it is written down rather than hidden inside a fitted
+coefficient.</p>
+<p>A second thing the corpus cannot settle: <code>second_stage_ratio</code>. The
+aftersound's <em>level</em> is well determined (0.0106,
+IQR 0.0035–0.0202),
+but its <em>time constant</em> runs to whatever upper bound the search grid
+allows in 23 notes, because the aftersound sits close
+to the recording's own floor. The data gives a lower bound of
+10.8 and no upper one; the preset takes
+12, the low end of that bracket, which is the shortest tail the measurements
+permit.</p>
+</div>
+
+<h2>The radiation filter that is not there</h2>
+<div class="card">
+<p>A soundboard transfer would be a function of absolute frequency, and the
+partial rolloff is a function of index. Within one note those are the same thing:
+<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>log</mi><mo>&#x2061;</mo><msub><mi>f</mi><mi>n</mi></msub><mo>=</mo><mi>log</mi><mo>&#x2061;</mo><mi>n</mi><mo>+</mo><mi>log</mi><mo>&#x2061;</mo><msub><mi>f</mi><mn>0</mn></msub></math>,
+and once each note's own level is free the two regressors are collinear. Fitting
+both with per-note intercepts over 337 partials of 21 notes gives
+k<sub>n</sub> = −45 ± 4 and k<sub>f</sub> = +46 ± 4: equal, opposite and
+meaningless.</p>
+<p>So no radiation filter was added. The fitted pitch-dependent rolloff already
+carries whatever radiation shaping is in these recordings, and a separate filter
+would double-count it. Identifying one needs a design this corpus does not have —
+the same note at several string lengths, or a measured soundboard admittance.</p>
+</div>
+
+<h2>Every coefficient, and where it came from</h2>
+<div class="card"><div class="scrollx"><table>
+<tr><th>Coefficient</th><th>Guessed</th><th>Fitted</th><th>n</th><th>How</th></tr>
+<tr><td><code>inharmonicity_B</code></td><td class="n dn">4.0e−4</td><td class="n"><b>0.0006478</b> ×/ 1.07</td><td class="n">23</td><td>B at A4, from log10 B linear in pitch over MIDI 48-96</td></tr>
+<tr><td><code>inharmonicity_decades_per_octave</code></td><td class="n dn">0.20 (implied)</td><td class="n"><b>0.3858</b> ± 0.027</td><td class="n">23</td><td>a decade of B every 31.1 semitones</td></tr>
+<tr><td><code>inharmonicity_floor</code></td><td class="n dn">— (none)</td><td class="n"><b>0.0001387</b></td><td class="n">14</td><td>flat B below the bass break; the exponential law does not extend there</td></tr>
+<tr><td><code>partial_amp_rolloff</code></td><td class="n dn">1.25</td><td class="n"><b>3.018</b> ± 0.19</td><td class="n">17</td><td>rolloff exponent at A4 and mid velocity</td></tr>
+<tr><td><code>rolloff_per_octave</code></td><td class="n dn">— (flat)</td><td class="n"><b>0.6428</b> ± 0.15</td><td class="n">17</td><td>the tilt steepens with pitch; one number for the keyboard was the largest single error in the guessed preset</td></tr>
+<tr><td><code>hammer_strike_point</code></td><td class="n dn">0.125</td><td class="n"><b>0.1185</b></td><td class="n">24</td><td>1/8.4 of the speaking length, from the notch comb the hammer leaves in the partial amplitudes. Real pianos strike between 1/7 and 1/9.</td></tr>
+<tr><td><code>partial_decay_base</code></td><td class="n dn">2.4 s</td><td class="n"><b>0.746</b> ×/ 1.14</td><td class="n">26</td><td>tau_1 at A4, from the prompt (first 25 dB) decay</td></tr>
+<tr><td><code>decay_halving_semitones</code></td><td class="n dn">24</td><td class="n"><b>15.49</b></td><td class="n">26</td><td></td></tr>
+<tr><td><code>partial_decay_exponent</code></td><td class="n dn">0.65</td><td class="n"><b>0.1271</b></td><td class="n">20</td><td>alpha_n proportional to n^this. Stiffness-proportional damping predicts 2; the largest value seen on any note is 0.52, and the power law&#x27;s median R^2 is 0.10, so the functional form explains almost none of the partial-to-partial variation. See the report&#x27;s decay_law_fails entry.</td></tr>
+<tr><td><code>second_stage_ratio</code></td><td class="n dn">3.5</td><td class="n"><b>12</b></td><td class="n">23</td><td>NOT identified by this corpus. The fit runs to whatever upper bound the search grid allows in 16 of 23 notes, because the aftersound sits close to the recording&#x27;s own floor. What the data supports is a lower bound of 10.8. 12 is taken at the low end of that bracket, which is the shortest tail the measurements permit. <span class="up">not identified</span></td></tr>
+<tr><td><code>second_stage_mix</code></td><td class="n dn">0.22</td><td class="n"><b>0.01059</b></td><td class="n">23</td><td>amplitude of the aftersound relative to the prompt sound</td></tr>
+<tr><td><code>unison_detune_cents</code></td><td class="n dn">0.7</td><td class="n"><b>1.516</b></td><td class="n">7</td><td>from the amplitude-modulation rate of the fundamental. This conflates unison detuning with beating between the string&#x27;s two polarisations; both are real and both are what the parameter is for.</td></tr>
+<tr><td><code>unison_depth</code></td><td class="n dn">0.40</td><td class="n"><b>0.4312</b></td><td class="n">7</td><td></td></tr>
+<tr><td><code>velocity_brightness</code></td><td class="n dn">1.3</td><td class="n"><b>1.611</b> ± 0.68</td><td class="n">8</td><td>from how far the fitted rolloff moves between pp and ff. The looser subset gives 0.10 +- 0.59, so the interval is wide and contains the old guess of 1.3.</td></tr>
+<tr><td><code>attack_ms</code></td><td class="n dn">4.0</td><td class="n"><b>4</b></td><td class="n">26</td><td>confirmed by calibration, unchanged</td></tr>
+</table></div>
+<p class="cap">Errors are standard errors of the regression coefficient; “×/” is a
+multiplicative one on a log-fitted quantity. n is the number of notes the
+estimate rests on.</p></div>
+
+<h2>What is still guessed</h2>
+<div class="card warnbox">
+<p>Seven coefficients could not be reached by this corpus. They are listed here
+because a preset in which some numbers are measured and some are not is more
+dangerous than one in which none are: it invites you to trust all of them
+equally.</p>
+<div class="scrollx"><table>
+<tr><th>Coefficient</th><th>Why not, and what would fix it</th></tr>
+<tr><td><code>hammer_noise</code></td><td>The broadband strike component cannot be separated from the partials at onset by this analysis: the heterodyne bank measures what is at the partial frequencies, and the noise between them is also the room. Would need a close, anechoic capture, or a physical hammer model.</td></tr>
+<tr><td><code>release_ms_fast</code></td><td>Nothing in the Iowa corpus is a key release; the notes ring to the floor undamped. This maps the MIDI release-velocity byte, which those recordings do not have.</td></tr>
+<tr><td><code>release_ms_slow</code></td><td>As release_ms_fast.</td></tr>
+<tr><td><code>damper_decay_exponent</code></td><td>The one coefficient this pass most wants and cannot get. Fitting q needs a note whose damped decay is recorded per partial -- a held note released at a known instant. Every Iowa note is free-ringing. The free-ring exponent measured here (0.13) is a different mechanism (internal loss in the wire) from felt absorption and is not a substitute. Kelvin-Voigt gives q = 2, felt&#x27;s loss modulus rises with frequency, and 1.0 is the midpoint in log; it is a slider, not a measurement.</td></tr>
+<tr><td><code>pedal_engage/pedal_knee/pedal_leak/pedal_contact_bite</code></td><td>Half-damper geometry. The FP-30X reports cc64 but no recording of what it did to the sound exists on this machine. Set from the pedal statistics of his own takes (769 mid-travel excursions, median 15 ms; cc64 = 127 for 86.6-91.4% of playing time), not from audio.</td></tr>
+</table></div>
+</div>
+
+<h2>The electric piano is not fitted at all</h2>
+<div class="card warnbox">
+<p>No openly-licensed corpus of isolated Rhodes notes was reachable without
+creating an account, which was out of scope. The MuseScore_General electric piano
+that ships with this project was checked and <b>rejected as a source</b>: its pp,
+mf and ff spectra are bit-identical, so it carries one velocity layer and no
+velocity-to-timbre information at all, and its partials are harmonic to within
+0.5%, so there is no bell partial in it to measure.</p>
+<p>One number in the tine preset does have an outside authority.
+<code>bell_partial</code> = 6.267 is
+(2.988/1.194)<sup>2</sup>, the second transverse mode of a clamped–free bar,
+which is what a tine is. Everything else there is a first guess and is marked as
+one.</p>
+<p><b>The FP-30X's own voice could not be analysed.</b> Its <code>USB COMPUTER</code>
+port carries audio as well as MIDI, but the USB-C-to-USB-B cable needed to reach
+it is still on order; the piano's USB-A socket is a flash-drive host port and
+enumerates nothing. Every WAV currently in <code>~/Music/FP-30X&nbsp;Studio/takes/</code>
+is a fluidsynth render of the captured MIDI through
+<code>MuseScore_General.sf3</code>, not a recording of the instrument. Two ways
+in, once the cable lands or before: a USB-B capture of single notes across the
+register at three dynamics, about twenty minutes of playing; or a USB flash drive
+in the front-panel socket, which records 44.1&nbsp;kHz WAV with no computer at
+all and is free to try today.</p>
+</div>
+
+<h2>Method</h2>
+<div class="card">
+<p>Partial frequencies come from a zero-padded DFT of a 0.6&nbsp;s window
+starting 20&nbsp;ms after the strike — past the hammer noise, which is broadband
+and would otherwise be peak-picked as a partial — with peaks accepted against a
+<em>local</em> noise floor rather than a fixed level below the loudest partial.
+That is what makes the treble notes come out with four partials instead of
+thirty: a fixed threshold accepts the hiss and the regression then fits it.</p>
+<p>Per-partial envelopes are a heterodyne filter bank, not an STFT tracker:
+multiply by
+<math xmlns="http://www.w3.org/1998/Math/MathML"><msup><mi>e</mi><mrow><mo>&#x2212;</mo><mn>2</mn><mi>&#x03C0;</mi><mi>i</mi><msub><mi>f</mi><mi>n</mi></msub><mi>t</mi></mrow></msup></math>,
+low-pass at f₀/2.4 and decimate. The passband sits exactly on the measured
+partial frequency, so it is immune to the bin quantisation and the
+time–frequency trade that make an STFT track wander on a decaying tone.</p>
+<p>Decay rates are amplitude-weighted least squares on
+<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>log</mi><mo>&#x2061;</mo><mo>|</mo><mi>A</mi><mo>|</mo></math>
+over the first 25&nbsp;dB. Everything is in
+<code>fp30x_studio/synth/analysis.py</code> (one note in, numbers out) and
+<code>fp30x_studio/synth/fit.py</code> (many notes in, a preset and this report
+out); rerunning <code>python -m fp30x_studio.synth.fit</code> on the same folder
+reproduces every number on this page.</p>
+<p><b>Provenance.</b> University of Iowa Electronic Music Studios, Musical
+Instrument Samples: Steinway &amp; Sons model B, played by Evan Mazunik, recorded
+5 and 27 November 2001 in 2017 Voxman Music Building by Michael Cash; two Neumann
+KM&nbsp;84 cardioids 8″ above the bass and treble strings, Mackie 1402-VLZ,
+Panasonic SV-3800 DAT, 16-bit 44.1&nbsp;kHz stereo, <b>non-anechoic</b>. The
+collection has been free to download and use without restriction since 1997; no
+account was created and no terms were accepted. Files and a
+<code>PROVENANCE.md</code> are in
+<code>~/workspace/audio/timbre-data/iowa-piano/</code>.</p>
+</div>
+
+<h2>The attack, which needed a calibration rather than a fit</h2>
+<div class="card">
+<p>Measured 10%-to-peak on the summed signal gives a median of
+20.9&nbsp;ms across
+26 mf and ff notes, which looks like five times the
+model's 4&nbsp;ms. It is not: that estimator measures when the partials finish
+interfering, not when one of them rises. Running it on this model's <em>own</em>
+output with <code>attack_ms</code> set to 1, 2, 4, 8, 12 and 20 reports 12.8,
+14.8, 20.5, 30.2, 36.3 and 62.3&nbsp;ms. The recorded 20.8 therefore corresponds
+to <code>attack_ms</code> = 4.0 — exactly what the preset already had. The attack
+was not the problem, and a naive fit would have made it five times too slow.</p>
+</div>
+
+<footer>
+Built by <code>docs/build_timbre_fit.py</code> from
+<code>iowa-fits.json</code> and <code>iowa-fit-report.json</code>. Self-contained:
+no scripts, no network, inline SVG and MathML. Machine-written on Jake's behalf,
+19 August 2026. The renders these coefficients produced are
+<code>~/Music/FP-30X&nbsp;Studio/renders/2026-08-17-piece.{acoustic,electric}.fitted.wav</code>,
+beside the originals for A/B.
+</footer>
+</div>

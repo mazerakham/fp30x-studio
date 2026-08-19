@@ -448,25 +448,55 @@ const PARAMS = [
   {k:"partials",              g:"Partial structure", m:"string", lo:1,   hi:48,  st:1,     dp:0,
    h:"Sine partials per voice. Anything above Nyquist is dropped, so treble notes cost less."},
   {k:"inharmonicity_B",       g:"Partial structure", m:"string", lo:0,   hi:0.004, st:0.00002, dp:5,
-   h:"Stiffness. B=0 is a Fourier series; B>0 stretches the partials sharp and detunes the octaves."},
-  {k:"partial_amp_rolloff",   g:"Partial structure", m:"string", lo:0.3, hi:3.5, st:0.01,  dp:2,
-   h:"aₙ ~ n^−rolloff, before the velocity term."},
+   h:"Stiffness at A4. B=0 is a Fourier series; B>0 stretches the partials sharp. Measured 6.5e−4 on a Steinway B."},
+  {k:"inharmonicity_decades_per_octave", g:"Partial structure", m:"string", lo:0, hi:0.8, st:0.005, dp:3,
+   h:"How fast B rises with pitch. Measured 0.386 ± 0.027 — a decade of B every 31 semitones, not 60."},
+  {k:"inharmonicity_floor",   g:"Partial structure", m:"string", lo:0,   hi:0.001, st:0.00001, dp:5,
+   h:"B never goes below this. The exponential stops at the bass break: measured B is flat at 1.4e−4 from MIDI 30 to 48."},
+  {k:"partial_amp_rolloff",   g:"Partial structure", m:"string", lo:0.3, hi:6.0, st:0.01,  dp:2,
+   h:"aₙ ~ n^−rolloff at A4, before the velocity term. Measured 3.02 ± 0.19."},
+  {k:"rolloff_per_octave",    g:"Partial structure", m:"string", lo:-0.5,hi:1.6, st:0.01,  dp:2,
+   h:"How much steeper the tilt gets per octave up. Measured +0.64 ± 0.15. One rolloff for the whole keyboard was the biggest single error in the guessed preset."},
+  {k:"hammer_strike_point",   g:"Partial structure", m:"string", lo:0,   hi:0.25,st:0.001, dp:3,
+   h:"Where the hammer hits, as a fraction of the speaking length: aₙ ×= |sin(nπα)|, so partials with a node there are notched out. Measured 0.1185 = 1/8.4."},
   {k:"velocity_brightness",   g:"Partial structure", m:"both",   lo:0,   hi:1.6, st:0.01,  dp:2,
    h:"How far strike velocity bends the rolloff exponent. 0 = harder is only louder."},
-  {k:"partial_decay_base",    g:"Envelope",          m:"both",   lo:0.3, hi:24,  st:0.1,   dp:1, u:" s",
-   h:"τ₁ — the fundamental's decay time constant."},
-  {k:"partial_decay_exponent",g:"Envelope",          m:"string", lo:0,   hi:2,   st:0.01,  dp:2,
-   h:"τₙ = τ₁·n^−exponent. Above 0 the top of the spectrum dies first and the note darkens as it rings."},
+  {k:"partial_decay_base",    g:"Envelope",          m:"both",   lo:0.1, hi:24,  st:0.01,  dp:2, u:" s",
+   h:"τ₁ at A4 — the fundamental's prompt decay. Measured 0.75 s, not 2.4."},
+  {k:"decay_halving_semitones",g:"Envelope",         m:"both",   lo:6,   hi:60,  st:0.5,   dp:1,
+   h:"τ₁ halves every this many semitones upward. Measured 15.5, not 24."},
+  {k:"partial_decay_exponent",g:"Envelope",          m:"string", lo:-0.5,hi:2.5, st:0.01,  dp:2,
+   h:"τₙ = τ₁·n^−exponent while the string rings free. Measured median 0.13 — and the power law explains only ~10% of the partial-to-partial variance, so this is a weak law, not a strong one."},
+  {k:"second_stage_ratio",    g:"Envelope",          m:"both",   lo:1,   hi:24,  st:0.25,  dp:2,
+   h:"Aftersound τ ÷ prompt τ. Not identified by the corpus: the fit only gives a lower bound near 11."},
+  {k:"second_stage_mix",      g:"Envelope",          m:"both",   lo:0,   hi:0.5, st:0.001, dp:4,
+   h:"Amplitude of the aftersound relative to the prompt sound. Measured 0.011 — twenty times smaller than the 0.22 that was guessed, which is most of why the old preset sustained like an organ."},
+  {k:"unison_detune_cents",   g:"Envelope",          m:"string", lo:0,   hi:6,   st:0.01,  dp:2,
+   h:"How far apart the strings of one unison are tuned. Measured 1.52 cents from the beat rate."},
+  {k:"unison_depth",          g:"Envelope",          m:"string", lo:0,   hi:1,   st:0.01,  dp:2,
+   h:"How deeply they beat. Measured 0.43. Faded out below MIDI 48, where the strings are single wound ones and nothing beats."},
   {k:"attack_ms",             g:"Attack",            m:"both",   lo:0.2, hi:60,  st:0.1,   dp:1, u:" ms",
    h:"Ramp to peak."},
   {k:"hammer_noise",          g:"Attack",            m:"both",   lo:0,   hi:1,   st:0.01,  dp:2,
-   h:"Band-passed noise burst at onset, scaled by velocity²."},
+   h:"Band-passed noise burst at onset, scaled by velocity². NOT fitted — it cannot be separated from the partials by the analysis used."},
+  {k:"partial_phase_spread",  g:"Attack",            m:"string", lo:0,   hi:1,   st:0.01,  dp:2,
+   h:"0 starts every partial at the same phase, which sums to an impulse and clicks. 1 is uniform random."},
   {k:"release_ms_slow",       g:"Damper",            m:"both",   lo:20,  hi:2000,st:5,     dp:0, u:" ms",
    h:"Fall time at release velocity 1 — the key let go slowly."},
   {k:"release_ms_fast",       g:"Damper",            m:"both",   lo:5,   hi:800, st:1,     dp:0, u:" ms",
    h:"Fall time at release velocity 127 — snapped off the key."},
   {k:"damper_cc64_scale",     g:"Damper",            m:"both",   lo:0,   hi:2,   st:0.01,  dp:2,
-   h:"How completely the pedal defeats the damper. 1 = full pedal lifts it entirely."},
+   h:"Overall pedal authority. 0 is a piano with no pedal at all."},
+  {k:"damper_decay_exponent", g:"Damper",            m:"string", lo:0,   hi:2.5, st:0.01,  dp:2,
+   h:"q in αₙ = α₁·n^q — how much faster the felt takes the high partials than the fundamental. Kelvin–Voigt damping gives 2. NOT fitted: no recording of a damped decay was available."},
+  {k:"pedal_engage",          g:"Damper",            m:"both",   lo:0,   hi:1,   st:0.01,  dp:2,
+   h:"Where in the pedal's travel the felt leaves the strings. Above this the damper is clear; the escapement means it is not a straight line."},
+  {k:"pedal_knee",            g:"Damper",            m:"both",   lo:0.01,hi:1,   st:0.01,  dp:2,
+   h:"How wide that engagement band is. Small is a switch, large is the old linear map."},
+  {k:"pedal_leak",            g:"Damper",            m:"both",   lo:0,   hi:0.3, st:0.001, dp:3,
+   h:"Residual damping at full pedal. It used to be exactly 0, and CC64 was 127 for ~90% of his playing — so the damper was not weak then, it was switched off, and nothing ever stopped ringing."},
+  {k:"pedal_contact_bite",    g:"Damper",            m:"both",   lo:0,   hi:0.4, st:0.005, dp:3,
+   h:"Energy dumped by one felt landing, regardless of how briefly it stays. His pedal dips have a median duration of 15 ms; integrated they do nothing, but felt touching wire for 15 ms takes real energy out, and takes it from the top of the spectrum first."},
   {k:"fm_ratio",              g:"Tine (FM)",         m:"tine",   lo:0.25,hi:12,  st:0.01,  dp:2,
    h:"Modulator ÷ carrier. Non-integer is what makes a tine a tine rather than a harmonic string."},
   {k:"fm_index",              g:"Tine (FM)",         m:"tine",   lo:0,   hi:14,  st:0.01,  dp:2,
@@ -482,17 +512,36 @@ const PARAMS = [
 ];
 const PKEYS = PARAMS.map(p=>p.k);
 
+/* PRESET_A is synth/presets/acoustic.json as fitted on 2026-08-19 to 38 isolated
+   Steinway B notes; PRESET_B is presets/electric.json, which is NOT fitted. Keep
+   these in step with the JSON on disk -- the point of the shared schema is that a
+   preset exported here renders unchanged offline. */
 const PRESET_A = {
-  model:"string", partials:20, inharmonicity_B:0.0004, partial_amp_rolloff:1.15,
-  partial_decay_base:7.0, partial_decay_exponent:0.75, attack_ms:4, hammer_noise:0.25,
-  velocity_brightness:0.55, release_ms_fast:60, release_ms_slow:320, damper_cc64_scale:1.0,
-  fm_ratio:1.0, fm_index:0, bell_partial:4.0, bell_amp:0, bark_ms:8, bark_amp:0,
+  model:"string", partials:32,
+  inharmonicity_B:0.0006478, inharmonicity_decades_per_octave:0.386,
+  inharmonicity_floor:0.0001387,
+  partial_amp_rolloff:3.018, rolloff_per_octave:0.643, hammer_strike_point:0.1185,
+  partial_decay_base:0.746, decay_halving_semitones:15.5,
+  partial_decay_exponent:0.127, second_stage_ratio:12.0, second_stage_mix:0.0106,
+  unison_detune_cents:1.52, unison_depth:0.431,
+  attack_ms:4, hammer_noise:0.22, velocity_brightness:1.61, partial_phase_spread:1.0,
+  release_ms_fast:40, release_ms_slow:340, damper_cc64_scale:1.0,
+  damper_decay_exponent:1.0, pedal_engage:0.55, pedal_knee:0.25,
+  pedal_leak:0.02, pedal_contact_bite:0.05,
+  fm_ratio:3.37, fm_index:0, bell_partial:0, bell_amp:0, bark_ms:0, bark_amp:0,
 };
 const PRESET_B = {
-  model:"tine", partials:6, inharmonicity_B:0.0, partial_amp_rolloff:2.4,
-  partial_decay_base:12.0, partial_decay_exponent:0.4, attack_ms:2, hammer_noise:0.10,
-  velocity_brightness:0.90, release_ms_fast:90, release_ms_slow:400, damper_cc64_scale:1.0,
-  fm_ratio:1.41, fm_index:3.2, bell_partial:6.7, bell_amp:0.22, bark_ms:26, bark_amp:0.45,
+  model:"tine", partials:8,
+  inharmonicity_B:0, inharmonicity_decades_per_octave:0, inharmonicity_floor:0,
+  partial_amp_rolloff:0, rolloff_per_octave:0, hammer_strike_point:0,
+  partial_decay_base:6.5, decay_halving_semitones:48.0,
+  partial_decay_exponent:0, second_stage_ratio:12.0, second_stage_mix:0.0106,
+  unison_detune_cents:0, unison_depth:0,
+  attack_ms:2.5, hammer_noise:0, velocity_brightness:0, partial_phase_spread:1.0,
+  release_ms_fast:55, release_ms_slow:420, damper_cc64_scale:1.0,
+  damper_decay_exponent:1.0, pedal_engage:0.55, pedal_knee:0.25,
+  pedal_leak:0.02, pedal_contact_bite:0.05,
+  fm_ratio:3.37, fm_index:2.9, bell_partial:6.267, bell_amp:0.34, bark_ms:45, bark_amp:0.5,
 };
 const P = Object.assign({}, PRESET_A);
 
@@ -505,6 +554,19 @@ const clamp=(x,a,b)=>x<a?a:(x>b?b:x);
 const NAMES=["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];
 const noteName=m=>NAMES[m%12]+(Math.floor(m/12)-1);
 const hz=m=>440*Math.pow(2,(m-69)/12);
+/* The per-register laws, in one place. Every panel on this page and the voice
+   itself read them from here, so a plot cannot drift away from what is being
+   sounded -- which it silently did while B and the rolloff were single numbers
+   and the drawing code kept its own copy of the formula. */
+const Bat   = m => Math.max(P.inharmonicity_B*Math.pow(10, P.inharmonicity_decades_per_octave*(m-69)/12),
+                            P.inharmonicity_floor);
+const rollAt= (m,vn) => Math.max(0.05, P.partial_amp_rolloff + P.rolloff_per_octave*(m-69)/12
+                                       - P.velocity_brightness*(vn-0.5));
+const tau1At= m => Math.max(0.02, P.partial_decay_base*Math.pow(2,-(m-69)/Math.max(P.decay_halving_semitones,1)));
+const tauAt = (m,n) => Math.max(0.02, tau1At(m)*Math.pow(n, P.model==="string" ? -P.partial_decay_exponent : 0));
+const ampAt = (m,n,vn) => Math.pow(n,-rollAt(m,vn))
+                        * (P.hammer_strike_point>1e-4 ? Math.abs(Math.sin(n*Math.PI*P.hammer_strike_point)) : 1);
+const freqAt= (m,n) => { const B=Bat(m); return n*hz(m)*Math.sqrt(1+B*n*n); };
 const fmtT=s=>{s=Math.max(0,s);const m=Math.floor(s/60);return m+":"+(s-60*m).toFixed(1).padStart(4,"0");};
 
 /* ==================================================================
@@ -555,50 +617,129 @@ function releaseSeconds(rvel){
   const u = clamp((rvel-1)/126, 0, 1);
   return (P.release_ms_slow + (P.release_ms_fast - P.release_ms_slow)*u)/1000;
 }
+/* Felt-on-string contact, in [0,1]. Two things the old `1 - cc64/127` got
+   wrong about the mechanism:
+     - a damper pedal has an ESCAPEMENT. The felt is clear of the strings
+       through the top of the travel and engages over a narrow band partway
+       down, so the map has a knee, not a slope;
+     - a real damper LEAKS. `pedal_leak` is the residual at full pedal, and it
+       matters far out of proportion to its size: CC64 sat at 127 for 86.6-91.4%
+       of the playing time on his takes, and with leak = 0 the damper is not
+       weak during all of that, it is switched off. Nothing ever stops. */
 function damperEffect(pedalNorm){
-  return clamp(1 - pedalNorm*P.damper_cc64_scale, 0, 1);
+  const u = clamp(pedalNorm*P.damper_cc64_scale, 0, 1);
+  const step = P.pedal_knee <= 1e-6
+    ? (u >= P.pedal_engage ? 0 : 1)
+    : clamp((P.pedal_engage - u)/P.pedal_knee + 0.5, 0, 1);
+  return clamp(P.pedal_leak + (1 - P.pedal_leak)*step, 0, 1);
 }
 function damperTau(rvel, pedalNorm){
   const e = damperEffect(pedalNorm);
-  if(e <= 0.02) return Infinity;            // pedal fully defeats the damper
+  if(e <= 1e-6) return Infinity;
   return releaseSeconds(rvel)/e;
 }
+/* One felt landing dumps this much off partial n, whatever its dwell time. */
+function biteFactor(n, rvel){
+  const b = P.pedal_contact_bite;
+  if(b <= 1e-6) return 1;
+  return Math.exp(-Math.pow(n, P.damper_decay_exponent)*b/releaseSeconds(rvel));
+}
 
-/* ---- one string voice --------------------------------------------------- */
+/* Sine partials with a chosen starting phase. OscillatorNode has no phase
+   control, so each phase is a one-harmonic PeriodicWave: real[1] = cos φ,
+   imag[1] = sin φ. Sixteen of them, cached, is a fine enough grid that the
+   difference from a continuous random phase is inaudible and the cost is
+   sixteen objects for the life of the page rather than one per partial. */
+const PHASE_WAVES = [];
+function phaseWave(k){
+  if(!PHASE_WAVES.length){
+    for(let i=0;i<16;i++){
+      const a = 2*Math.PI*i/16;
+      PHASE_WAVES.push(ctx.createPeriodicWave(
+        new Float32Array([0, Math.cos(a)]), new Float32Array([0, Math.sin(a)]),
+        {disableNormalization:true}));
+    }
+  }
+  return PHASE_WAVES[((k%16)+16)%16];
+}
+
+/* ---- one string voice ---------------------------------------------------
+   Every law here is the one in fp30x_studio/synth/voices.py, with two node-budget
+   compromises noted at the point they are made. B and the rolloff exponent are
+   both functions of pitch: one value of either for the whole keyboard was the
+   largest single error in the guessed preset. */
 function StringVoice(t, midi, vel, gainScale){
   const f0 = hz(midi), vn = clamp(vel/127,0.004,1);
   const amp = Math.pow(vn,1.6);
-  const roll = Math.max(0.05, P.partial_amp_rolloff*(1 - P.velocity_brightness*(vn-0.5)));
+  const oct = (midi - 69)/12;
+  const roll = Math.max(0.05,
+    P.partial_amp_rolloff + P.rolloff_per_octave*oct - P.velocity_brightness*(vn-0.5));
+  const B = Math.max(P.inharmonicity_B*Math.pow(10, P.inharmonicity_decades_per_octave*oct),
+                     P.inharmonicity_floor);
   const nyq = ctx.sampleRate*0.47;
-  const B = P.inharmonicity_B, atk = P.attack_ms/1000;
+  const atk = P.attack_ms/1000;
+  const tau1 = Math.max(0.02, P.partial_decay_base*Math.pow(2, -(midi-69)/P.decay_halving_semitones));
+  const ratio = Math.max(1, P.second_stage_ratio), mix = clamp(P.second_stage_mix,0,1);
+  const alpha = P.hammer_strike_point;
+  /* Unisons beat, and below MIDI 48 there is nothing to beat: measured, the
+     amplitude modulation of the fundamental has a periodogram concentration of
+     0.013 below 48 against 0.337 from 60 up. Faded in over that octave. */
+  const depth = P.unison_depth*clamp((midi-48)/12,0,1);
+  const det = Math.pow(2, P.unison_detune_cents/1200);
 
   const vg = ctx.createGain(); vg.gain.value = gainScale; vg.connect(bus);
 
-  const parts=[]; let norm=0;
+  /* amplitudes first, so the series can be culled on level rather than on a
+     fixed count: with a fitted rolloff a treble note has three or four partials
+     above -60 dB and there is no reason to build thirty oscillators for it. */
+  const an=[], fn=[]; let peak=0;
   for(let n=1;n<=P.partials;n++){
-    const fn = n*f0*Math.sqrt(1+B*n*n);
-    if(fn>=nyq) break;
-    norm += Math.pow(n,-roll);
+    const f = n*f0*Math.sqrt(1+B*n*n);
+    if(f>=nyq) break;
+    let a = Math.pow(n,-roll);
+    if(alpha>1e-4) a *= Math.abs(Math.sin(n*Math.PI*alpha));
+    an.push(a); fn.push(f); if(a>peak) peak=a;
   }
+  let norm=0; for(const a of an) norm+=a;
   if(norm<=0) norm=1;
 
-  let endT = t;
-  for(let n=1;n<=P.partials;n++){
-    const fn = n*f0*Math.sqrt(1+B*n*n);
-    if(fn>=nyq) break;
-    const an = amp*Math.pow(n,-roll)/norm;
-    const tau = Math.max(0.02, P.partial_decay_base*Math.pow(n,-P.partial_decay_exponent));
-    const o = ctx.createOscillator(); o.type="sine"; o.frequency.value=fn;
+  const parts=[]; let endT=t;
+  const mkOsc=(f, a, tau, level)=>{
+    const o = ctx.createOscillator();
+    if(P.partial_phase_spread>0.001)
+      o.setPeriodicWave(phaseWave(Math.floor(Math.random()*16*P.partial_phase_spread)));
+    else o.type="sine";
+    o.frequency.value=f;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0,t);
-    g.gain.linearRampToValueAtTime(an, t+atk);
+    g.gain.linearRampToValueAtTime(level, t+atk);
     g.gain.setTargetAtTime(0, t+atk, tau);
     o.connect(g); g.connect(vg);
     const stop = t+atk+Math.min(tau*7, 26);
     o.start(t); o.stop(stop);
     if(stop>endT) endT=stop;
-    parts.push({o,g,tau});
     nOscLive++;
+    return {o,g,tau,n:1,bite:1};
+  };
+
+  for(let i=0;i<an.length;i++){
+    const n=i+1, a=amp*an[i]/norm;
+    if(an[i] < peak*3e-4) continue;           // -70 dB: inaudible, and it costs a node
+    const tau = Math.max(0.02, tau1*Math.pow(n,-P.partial_decay_exponent));
+    /* The unison is two real strings, so it is two real oscillators rather
+       than a tremolo on one: amplitudes a(1-d) and a·d beat between a(1-2d)
+       and a, which is exactly the envelope the offline renderer writes. */
+    const two = depth>0.005 && n<=8;
+    const pa = mkOsc(fn[i], a, tau, two ? a*(1-depth) : a); pa.n=n; parts.push(pa);
+    if(two){ const pb = mkOsc(fn[i]*det, a, tau, a*depth); pb.n=n; parts.push(pb); }
+    /* The aftersound, as a parallel branch at mix·a decaying ratio× slower.
+       Only the first six partials get one: the two-stage decay is a
+       polarisation-coupling effect at the bottom of the spectrum, and giving
+       every partial its own branch doubles the node count of the whole page
+       for something 39 dB down. The offline renderer does all of them. */
+    if(mix>0.0005 && n<=6){
+      const pc = mkOsc(fn[i], a, tau*ratio, a*mix); pc.n=n; parts.push(pc);
+    }
   }
 
   if(P.hammer_noise>0.001){
@@ -626,7 +767,8 @@ function TineVoice(t, midi, vel, gainScale){
      in a rolloff exponent: soft is nearly a sine, hard sprouts sidebands. */
   const bright = Math.pow(vn, 1.0 + 1.4*P.velocity_brightness);
   const amp = Math.pow(vn,1.25);
-  const tau = Math.max(0.05, P.partial_decay_base);
+  const tau = Math.max(0.05, P.partial_decay_base*Math.pow(
+    2, -(midi-69)/Math.max(P.decay_halving_semitones, 1)));
 
   const vg = ctx.createGain(); vg.gain.value=gainScale; vg.connect(bus);
   const eg = ctx.createGain();
@@ -645,7 +787,7 @@ function TineVoice(t, midi, vel, gainScale){
   mg.gain.setTargetAtTime(idx*0.06, t+atk, Math.max(0.02, tau*0.16));
   mod.connect(mg); mg.connect(car.frequency);
 
-  const parts=[{o:car,g:eg,tau:tau}];
+  const parts=[{o:car,g:eg,tau:tau,n:1,bite:1}];
   const stop = t+atk+Math.min(tau*7,26);
   car.start(t); car.stop(stop); mod.start(t); mod.stop(stop);
   nOscLive+=2;
@@ -659,7 +801,7 @@ function TineVoice(t, midi, vel, gainScale){
       bg.gain.linearRampToValueAtTime(P.bell_amp*amp*bright, t+Math.min(atk,0.004));
       bg.gain.setTargetAtTime(0, t+Math.min(atk,0.004), btau);
       bo.connect(bg); bg.connect(vg); bo.start(t); bo.stop(stop);
-      parts.push({o:bo,g:bg,tau:btau}); nOscLive++;
+      parts.push({o:bo,g:bg,tau:btau,n:P.bell_partial,bite:1}); nOscLive++;
     }
   }
   if(P.bark_amp>0.001){
@@ -732,12 +874,28 @@ function steal(t){
   return true;
 }
 
+/* The damper, applied PER PARTIAL.
+
+   This is the defect the fitting pass was opened on. The free-ringing string
+   already knew that high partials die first -- τₙ = τ₁·n^−exponent, right there
+   in StringVoice -- and then the damper threw that away and took every partial
+   down at one scalar rate, so a damped note kept its high partials at full
+   relative weight all the way to silence. No string does that, and it is a
+   strong candidate for the harshness the whole exercise started from.
+
+   αₙ = α₁·nq, so the damper's time constant for partial n is τ/n^q. Viscous
+   damping would give q = 0 and is ruled out by ear; stiffness-proportional
+   Kelvin–Voigt damping, a −η·u_xxt term, gives αₙ ∝ ηkₙ² ∝ ωₙ², so q = 2 is
+   the theoretical anchor. `damper_decay_exponent` is a slider because this one
+   is NOT fitted: no recording of a damped decay was available. */
 function applyTau(v, t, tau){
   t = Math.max(t, ctx.currentTime);
+  const q = P.damper_decay_exponent;
   for(const s of v.subs){
     let end = t;
     for(const p of s.parts){
-      const eff = Math.min(p.tau, tau);
+      const w = (q === 0 || !isFinite(tau)) ? 1 : Math.pow(Math.max(p.n||1,1), q);
+      const eff = Math.min(p.tau, tau/w);
       try{ p.g.gain.cancelAndHoldAtTime(t); }catch(e){ p.g.gain.cancelScheduledValues(t); }
       p.g.gain.setTargetAtTime(0, t, Math.max(0.004, eff));
       const st = t + Math.min(eff*7, 26);
@@ -749,6 +907,23 @@ function applyTau(v, t, tau){
   v.endT = Math.max.apply(null, v.subs.map(s=>s.endT));
 }
 
+/* A felt landing. Brief pedal dips -- median 15 ms on his takes, 30 ms at the
+   longest -- contribute nothing to a dwell integral and clear nothing, but felt
+   touching wire for 15 ms takes real energy out and takes it from the top of
+   the spectrum first. So a landing multiplies each partial by exp(−n^q·bite/τ),
+   which is a step, not a rate. */
+function applyBite(v, t){
+  if(P.pedal_contact_bite <= 1e-6) return;
+  t = Math.max(t, ctx.currentTime);
+  for(const s of v.subs) for(const p of s.parts){
+    const f = biteFactor(Math.max(p.n||1,1), v.rvel);
+    if(f >= 0.999) continue;
+    p.bite = (p.bite||1)*f;
+    try{ p.g.gain.cancelAndHoldAtTime(t); }catch(e){ p.g.gain.cancelScheduledValues(t); }
+    p.g.gain.setTargetAtTime(0, t, Math.max(0.004, p.tau*f));
+  }
+}
+
 function hardStop(v, t, tau){ applyTau(v, t, tau); v.state="damped"; }
 
 function releaseKey(t, midi, rvel, pedalNorm){
@@ -756,8 +931,12 @@ function releaseKey(t, midi, rvel, pedalNorm){
     const v=voices[i];
     if(v.midi!==midi || v.state!=="held") continue;
     v.rvel = rvel;
-    if(damperEffect(pedalNorm) <= 0.02){ v.state="pedaled"; }
-    else { applyTau(v, t, damperTau(rvel, pedalNorm)); v.state="damped"; }
+    /* There is no "the damper is off" state any more, because the damper is
+       never off -- it leaks. A note released under full pedal still gets a
+       (very long) damping tau; it is marked "pedaled" only so that setPedal
+       knows to shorten it when the foot comes up. */
+    applyTau(v, t, damperTau(rvel, pedalNorm));
+    v.state = damperEffect(pedalNorm) < 0.5 ? "pedaled" : "damped";
     return v;
   }
   return null;
@@ -766,11 +945,15 @@ function releaseKey(t, midi, rvel, pedalNorm){
 /* Pedal lifting is what actually stops most of his notes: on the open take
    780 of 804 releases happened with the damper already down. */
 function setPedal(t, pedalNorm){
+  const wasDown = damperEffect(curPedal) < 0.5;
   curPedal = pedalNorm;
-  if(damperEffect(pedalNorm) > 0.02){
+  const engaged = damperEffect(pedalNorm) >= 0.5;
+  if(engaged){
     for(const v of voices){
       if(v.state==="pedaled"){ applyTau(v, t, damperTau(v.rvel, pedalNorm)); v.state="damped"; }
     }
+    // a landing: felt coming back onto the strings
+    if(wasDown) for(const v of voices){ if(v.state!=="dead") applyBite(v, t); }
   }
 }
 let curPedal = 0;
@@ -1041,11 +1224,10 @@ function refreshMath(){
   s+='<text x="126" y="26" style="'+F+';font-size:19px;font-style:italic" fill="'+a+'">B</text>';
   s+='<text x="141" y="26" style="'+F+';font-size:19px;font-style:italic" fill="'+c+'">n</text>';
   s+='<text x="152" y="17" style="'+F+';font-size:12px" fill="'+c+'">2</text>';
-  s+='<text x="180" y="26" style="'+M+';font-size:11.5px" fill="'+d+'">B = '+P.inharmonicity_B.toFixed(5)+
-     '  →  partial 20 is '+(((Math.sqrt(1+P.inharmonicity_B*400))-1)*100).toFixed(2)+'% sharp</text>';
-  s+='<text x="0" y="52" style="'+M+';font-size:11.5px" fill="'+d+'">a_n = n^−r,  r = rolloff·(1 − brightness·(v/127 − ½))  →  r = '+
-     Math.max(0.05,P.partial_amp_rolloff*(1-P.velocity_brightness*(UI.soloVel/127-0.5))).toFixed(3)+
-     ' at v='+UI.soloVel+'</text>';
+  s+='<text x="180" y="26" style="'+M+';font-size:11.5px" fill="'+d+'">B('+noteName(soloPitch)+') = '+Bat(soloPitch).toFixed(5)+
+     '  →  partial 20 is '+(((Math.sqrt(1+Bat(soloPitch)*400))-1)*100).toFixed(2)+'% sharp</text>';
+  s+='<text x="0" y="52" style="'+M+';font-size:11.5px" fill="'+d+'">a_n = n^−k·|sin(nπα)|,  k = k(A4) + slope·oct − brightness·(v/127 − ½)  →  k = '+
+     rollAt(soloPitch, UI.soloVel/127).toFixed(3)+' at '+noteName(soloPitch)+' v='+UI.soloVel+'</text>';
   $("#mathInharm").innerHTML = svgMath(560,60,s);
 
   let e='';
@@ -1139,15 +1321,17 @@ function drawSpectrum(){
 
   // model prediction for the solo pitch
   const f0=hz(soloPitch), vn=UI.soloVel/127;
-  const roll=Math.max(0.05,P.partial_amp_rolloff*(1-P.velocity_brightness*(vn-0.5)));
   c.strokeStyle=css("--text"); c.lineWidth=1.4; c.globalAlpha=0.85;
   if(P.model==="string"){
-    let norm=0; const N=P.partials;
-    for(let n=1;n<=N;n++) norm+=Math.pow(n,-roll);
+    let norm=0, pk=0; const N=P.partials;
+    for(let n=1;n<=N;n++){ const a=ampAt(soloPitch,n,vn); norm+=a; if(a>pk) pk=a; }
     for(let n=1;n<=N;n++){
-      const fn=n*f0*Math.sqrt(1+P.inharmonicity_B*n*n);
+      const fn=freqAt(soloPitch,n);
       if(fn>=fmax) break;
-      const an=Math.pow(n,-roll)/norm;
+      // the voice culls partials below -70 dB of the loudest rather than
+      // building an oscillator for them, so the prediction must too
+      if(ampAt(soloPitch,n,vn) < pk*3e-4) continue;
+      const an=ampAt(soloPitch,n,vn)/norm;
       const db=20*Math.log10(Math.max(an,1e-6))-6;
       const x=X(fn);
       c.beginPath(); c.moveTo(x,T+ph); c.lineTo(x,Y(db)); c.stroke();
@@ -1180,7 +1364,7 @@ function drawEnv(){
   const {c,w,h}=fitCanvas($("#cvEnv"));
   c.clearRect(0,0,w,h);
   const L=32,R=8,T=10,Bo=20, pw=w-L-R, ph=h-T-Bo;
-  const Tmax=Math.max(2, Math.min(20, P.partial_decay_base*1.4));
+  const Tmax=Math.max(2, Math.min(20, tau1At(soloPitch)*P.second_stage_ratio*0.5));
   const X=t=>L+pw*clamp(t/Tmax,0,1);
   const dbmin=-70, Y=db=>T+ph*(1-(clamp(db,dbmin,0)-dbmin)/(0-dbmin));
   c.strokeStyle=css("--line"); c.fillStyle=css("--faint"); c.font="10px ui-monospace,Menlo,monospace";
@@ -1192,18 +1376,16 @@ function drawEnv(){
 
   const ns=[1,2,3,5,8,13,20,32].filter(n=>n<=P.partials);
   const vn=UI.soloVel/127;
-  const roll=Math.max(0.05,P.partial_amp_rolloff*(1-P.velocity_brightness*(vn-0.5)));
-  let norm=0; for(let n=1;n<=P.partials;n++) norm+=Math.pow(n,-roll);
+  let norm=0; for(let n=1;n<=P.partials;n++) norm+=ampAt(soloPitch,n,vn);
+  const mix=clamp(P.second_stage_mix,0,1), ratio=Math.max(1,P.second_stage_ratio);
   for(const n of ns){
-    const tau = P.model==="string"
-      ? Math.max(0.02,P.partial_decay_base*Math.pow(n,-P.partial_decay_exponent))
-      : Math.max(0.05,P.partial_decay_base);
-    const a0 = P.model==="string" ? Math.pow(n,-roll)/norm : (n===1?0.9:0);
+    const tau = tauAt(soloPitch,n);
+    const a0 = P.model==="string" ? ampAt(soloPitch,n,vn)/norm : (n===1?0.9:0);
     if(a0<=0) continue;
     c.beginPath();
     for(let px=0;px<=pw;px+=2){
       const t=Tmax*px/pw;
-      const a=a0*Math.exp(-t/tau);
+      const a=a0*((1-mix)*Math.exp(-t/tau)+mix*Math.exp(-t/(tau*ratio)));
       const db=20*Math.log10(Math.max(a,1e-9));
       const x=L+px, y=Y(db);
       px===0?c.moveTo(x,y):c.lineTo(x,y);
@@ -1215,8 +1397,8 @@ function drawEnv(){
   // damper trajectory from a release at 1/3 of the window
   const tr=Tmax/3, dt=damperTau(UI.soloRel, UI.pedalManual>=0?UI.pedalManual/127:curPedal);
   if(isFinite(dt)){
-    const tau1=P.model==="string"?Math.max(0.02,P.partial_decay_base):Math.max(0.05,P.partial_decay_base);
-    const eff=Math.min(tau1,dt);
+    const tau1=tau1At(soloPitch);
+    const eff=Math.min(tau1,dt);   // n = 1; higher partials fall at dt/n^q
     c.strokeStyle=css("--hot"); c.lineWidth=1.6; c.setLineDash([3,3]); c.beginPath();
     const a0=(P.model==="string"?1/norm:0.9)*Math.exp(-tr/tau1);
     for(let px=0;px<=pw;px+=2){

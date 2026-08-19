@@ -15,19 +15,26 @@ wrong: it would cut notes the player was holding with the pedal, and it would
 fail to cut notes the player released early and then lifted the pedal on.
 
 So damping is a *rate*, and the envelope is its integral. With damper contact
+``d(t) = damper_contact(cc64(t))`` -- see :func:`~.model.damper_contact` for the
+escapement, the knee and the leak that replaced the old straight line -- the
+post-release gain of partial ``n`` is
 
-    d(t) = clip(1 - damper_cc64_scale * cc64(t) / 127, 0, 1)
-
-which is piecewise constant between CC messages, the post-release gain is
-
-    g(t) = exp( -(D(t) - D(t_off)) / tau_release ),    D(t) = int_0^t d(u) du
+    g_n(t) = exp( -n^q (D(t) - D(t_off)) / tau_release ),   D(t) = int_0^t d du
 
 and ``tau_release`` is set per note by the release velocity. D is piecewise
 linear with a breakpoint at each CC64 message, so it is computed exactly once
 per take at the breakpoints and interpolated -- there is no discretisation
-error in it at all. Pedal fully down gives ``d = 0``, ``g = 1``, and the note
-simply carries on with its natural decay; pedal up gives ``d = 1`` and the note
-falls at its own release rate.
+error in it at all.
+
+The ``n^q`` is the part that was missing, and its absence was a bug rather than
+a simplification. The free-ringing string in this model already knows that high
+partials die first: ``tau_n = tau_1 n^-exponent``. The damper did not. It was
+applied to the *summed* buffer, one scalar exponential for all thirty-two
+partials at once, so the instant the felt touched, the model forgot everything
+it knew about frequency-dependent loss and took a note down to silence with its
+spectrum frozen. No string does that. ``damper_decay_exponent`` is ``q``;
+:func:`~.model.damper_contact` documents what is measured about the pedal and
+what is not.
 """
 
 from __future__ import annotations
@@ -36,18 +43,14 @@ import numpy as np
 
 from .model import (
     FM_INDEX_DECAY_S,
-    HAMMER_STRIKE_POINT,
-    UNISON_DEPTH,
-    UNISON_DETUNE_CENTS,
     UNISON_LOWEST_NOTE,
-    SECOND_STAGE_MIX,
-    SECOND_STAGE_RATIO,
     TINE_DECAY_HALVING_SEMITONES,
     VELOCITY_AMP_EXPONENT,
     Preset,
     decay_scale_at,
     inharmonicity_at,
     partial_frequencies,
+    rolloff_at,
     velocity_norm,
 )
 
@@ -97,14 +100,28 @@ def release_tau(velocity_off: int, preset: Preset) -> float:
     return max(ms, 1.0) / 1000.0
 
 
-def _damper_gain(t_abs: np.ndarray, t_off: float, tau: float,
+def _damper_load(t_abs: np.ndarray, t_off: float, tau: float,
                  ped_t: np.ndarray, ped_D: np.ndarray) -> np.ndarray:
-    """``exp(-(D(t) - D(t_off)) / tau)``, clamped to 1 before the release."""
+    """``(D(t) - D(t_off)) / tau``, floored at zero. The damper's exponent.
+
+    Split out from the gain so that one interpolation over the pedal trace
+    serves every partial of a note: partial ``n`` only needs this array times
+    ``n^q``, and raising a precomputed load to a per-partial weight is an
+    exponential, not a second pass over the whole pedal record.
+
+    ``D`` is non-decreasing, so this is already zero before the release and no
+    separate clamp is needed.
+    """
     D = np.interp(t_abs, ped_t, ped_D)
     D0 = float(np.interp(t_off, ped_t, ped_D))
-    g = np.exp(-np.maximum(D - D0, 0.0) / tau)
-    g[t_abs < t_off] = 1.0
-    return g
+    return np.maximum(D - D0, 0.0) / tau
+
+
+def _damper_gain(t_abs: np.ndarray, t_off: float, tau: float,
+                 ped_t: np.ndarray, ped_D: np.ndarray,
+                 weight: float = 1.0) -> np.ndarray:
+    """``exp(-weight * load)``. ``weight`` is ``n^q`` for one partial."""
+    return np.exp(-weight * _damper_load(t_abs, t_off, tau, ped_t, ped_D))
 
 
 def _tail_length(env_tau: float, tau_rel: float, t_on: float, t_off: float,
@@ -114,7 +131,7 @@ def _tail_length(env_tau: float, tau_rel: float, t_on: float, t_off: float,
     Probed on a 20 ms grid rather than solved, because the damper term depends
     on the pedal trace and has no closed form.
     """
-    cap = min(MAX_TAIL_S, env_tau * np.log(1.0 / TAIL_FLOOR))
+    cap = min(MAX_TAIL_S, max(env_tau, 1e-3) * np.log(1.0 / TAIL_FLOOR))
     grid = np.arange(0.0, cap + 0.02, 0.02)
     nat = np.exp(-grid / env_tau)
     damp = _damper_gain(t_on + grid, t_off, tau_rel, ped_t, ped_D)
@@ -169,18 +186,21 @@ def render_string(note: int, velocity_on: int, velocity_off: int,
                   t_on: float, t_off: float, preset: Preset, sr: int,
                   ped_t: np.ndarray, ped_D: np.ndarray,
                   rng: np.random.Generator) -> np.ndarray:
-    """A struck string, additively.
+    """A struck string, additively, with every coefficient traceable to a note.
 
-    Partials at ``f_n = n f0 sqrt(1 + B n^2)`` with B taken from the preset at
-    A4 and stretched with pitch. Amplitude ``a_n = n^-rolloff`` tilted by
-    velocity: ``a_n *= n^(velocity_brightness * (v - 1/2))``, so a hard strike
-    does not merely scale the same spectrum up, it moves the centroid. Decay
-    ``tau_n = tau_1 n^-exponent`` in two stages, so the top of the spectrum is
-    gone within a second while the fundamental is still going.
+    Partials at ``f_n = n f0 sqrt(1 + B n^2)``, B from the preset at A4 and
+    stretched with pitch by the fitted per-register law. Amplitude
+    ``a_n = n^-rolloff`` with the rolloff *itself* pitch-dependent -- the single
+    largest correction the measurements forced -- tilted further by velocity so
+    a hard strike moves the centroid rather than only the level. Decay
+    ``tau_n = tau_1 n^-exponent`` in two stages. The damper, when it lands,
+    lands per partial.
     """
     f0 = note_frequency(note)
     nyq = sr / 2.0
-    B = inharmonicity_at(note, preset.inharmonicity_B)
+    B = inharmonicity_at(note, preset.inharmonicity_B,
+                         preset.inharmonicity_decades_per_octave,
+                         preset.inharmonicity_floor)
     n_idx, freqs = partial_frequencies(f0, preset.partials, B, nyq)
     if n_idx.size == 0:
         return np.zeros(0, dtype=np.float32)
@@ -188,39 +208,59 @@ def render_string(note: int, velocity_on: int, velocity_off: int,
     v = velocity_norm(velocity_on)
     gain = v ** VELOCITY_AMP_EXPONENT
 
-    amps = n_idx ** (-preset.partial_amp_rolloff)
+    roll = rolloff_at(note, preset.partial_amp_rolloff, preset.rolloff_per_octave)
+    amps = n_idx ** (-roll)
     amps = amps * n_idx ** (preset.velocity_brightness * (v - 0.5))
     # The hammer cannot drive a partial that has a node where it strikes.
-    amps = amps * np.abs(np.sin(n_idx * np.pi * HAMMER_STRIKE_POINT))
+    if preset.hammer_strike_point > 1e-4:
+        amps = amps * np.abs(np.sin(n_idx * np.pi * preset.hammer_strike_point))
     amps = amps / np.sum(amps)
 
     # Unison beating, as an amplitude term per partial (see model.py).
-    depth = UNISON_DEPTH * min(max((note - UNISON_LOWEST_NOTE) / 12.0, 0.0), 1.0)
-    detune = UNISON_DETUNE_CENTS / 1200.0 * np.log(2.0)
+    depth = preset.unison_depth * min(
+        max((note - UNISON_LOWEST_NOTE) / 12.0, 0.0), 1.0)
+    detune = preset.unison_detune_cents / 1200.0 * np.log(2.0)
     beat_phase = rng.uniform(0.0, 2.0 * np.pi, size=n_idx.size)
 
-    tau1 = preset.partial_decay_base * decay_scale_at(note)
+    tau1 = preset.partial_decay_base * decay_scale_at(
+        note, preset.decay_halving_semitones)
     taus = tau1 * n_idx ** (-preset.partial_decay_exponent)
 
+    ratio = max(preset.second_stage_ratio, 1.0)
+    mix = min(max(preset.second_stage_mix, 0.0), 1.0)
+
     tau_rel = release_tau(velocity_off, preset)
-    slowest = tau1 * SECOND_STAGE_RATIO
+    slowest = tau1 * ratio
     n_total = _tail_length(slowest, tau_rel, t_on, t_off, ped_t, ped_D, sr)
+
+    # One interpolation of the pedal record for the whole note; each partial
+    # scales it by its own n^q.
+    t_abs = t_on + np.arange(n_total, dtype=np.float64) / sr
+    load = _damper_load(t_abs, t_off, tau_rel, ped_t, ped_D)
+    q = preset.damper_decay_exponent
 
     out = np.zeros(n_total, dtype=np.float64)
     atk = max(preset.attack_ms, 0.2) * 1e-3
-    phases = rng.uniform(0.0, 2.0 * np.pi, size=n_idx.size)
+    # ``partial_phase_spread`` 1 is uniform random, 0 is every partial starting
+    # at the same phase. Zero is what an additive synthesiser does by default
+    # and it is audibly wrong: all thirty-two sines summing in phase at t = 0
+    # is an impulse, and the crest factor of the first millisecond is the crest
+    # factor of a click, not of a string.
+    phases = rng.uniform(0.0, 2.0 * np.pi, size=n_idx.size) * min(
+        max(preset.partial_phase_spread, 0.0), 1.0)
 
     for k in range(n_idx.size):
         a, tau, f = amps[k], taus[k], freqs[k]
         if a < TAIL_FLOOR * 0.1:
             continue
         # This partial's own tail: high partials are both quieter and shorter,
-        # so most of them cost a fraction of the note's length.
-        span = tau * SECOND_STAGE_RATIO * np.log(a / (TAIL_FLOOR * 0.2) + 1.0)
+        # and under the damper they are shorter again by n^q, so most of them
+        # cost a fraction of the note's length.
+        span = tau * ratio * np.log(a / (TAIL_FLOOR * 0.2) + 1.0)
         m = min(n_total, max(int(span * sr), 1))
         t = np.arange(m, dtype=np.float64) / sr
-        env = ((1.0 - SECOND_STAGE_MIX) * np.exp(-t / tau)
-               + SECOND_STAGE_MIX * np.exp(-t / (tau * SECOND_STAGE_RATIO)))
+        env = ((1.0 - mix) * np.exp(-t / tau)
+               + mix * np.exp(-t / (tau * ratio)))
         # One rise time for every partial. The hammer's contact time does
         # lowpass the excitation, but that is a change of *amplitude*, and it
         # is already carried by the velocity tilt above; staggering the rises
@@ -230,14 +270,20 @@ def render_string(note: int, velocity_on: int, velocity_off: int,
         if depth > 0.0:
             env *= 1.0 - depth + depth * np.cos(
                 np.pi * detune * f * t + beat_phase[k])
+        if q != 0.0:
+            env *= np.exp(-(n_idx[k] ** q) * load[:m])
+        else:
+            env *= np.exp(-load[:m])
         out[:m] += a * env * np.sin(2.0 * np.pi * f * t + phases[k])
 
+    # The hammer burst is broadband and is damped like the top of the spectrum,
+    # not like the fundamental -- but it is over in a few milliseconds, long
+    # before any damper can reach it, so it is added after the per-partial
+    # damping and carries no weight of its own.
     h = _hammer(n_total, gain, v, preset, sr, rng)
     if h.size:
-        out[:h.size] += h
+        out[:h.size] += h * np.exp(-load[:h.size])
 
-    t_abs = t_on + np.arange(n_total, dtype=np.float64) / sr
-    out *= _damper_gain(t_abs, t_off, tau_rel, ped_t, ped_D)
     return _fade_truncated_tail(out * gain, sr).astype(np.float32)
 
 
@@ -275,7 +321,9 @@ def render_tine(note: int, velocity_on: int, velocity_off: int,
     tau = preset.partial_decay_base * decay_scale_at(
         note, TINE_DECAY_HALVING_SEMITONES)
     tau_rel = release_tau(velocity_off, preset)
-    n_total = _tail_length(tau * SECOND_STAGE_RATIO, tau_rel, t_on, t_off,
+    ratio = max(preset.second_stage_ratio, 1.0)
+    mix = min(max(preset.second_stage_mix, 0.0), 1.0)
+    n_total = _tail_length(tau * ratio, tau_rel, t_on, t_off,
                            ped_t, ped_D, sr)
 
     t = np.arange(n_total, dtype=np.float64) / sr
@@ -288,8 +336,8 @@ def render_tine(note: int, velocity_on: int, velocity_off: int,
     i_max = max(0.0, (nyq / f0 - 1.0) / max(preset.fm_ratio, 1e-6) - 2.0)
     idx = min(i0, i_max) * np.exp(-t / FM_INDEX_DECAY_S)
 
-    env = ((1.0 - SECOND_STAGE_MIX) * np.exp(-t / tau)
-           + SECOND_STAGE_MIX * np.exp(-t / (tau * SECOND_STAGE_RATIO)))
+    env = ((1.0 - mix) * np.exp(-t / tau)
+           + mix * np.exp(-t / (tau * ratio)))
     env *= 1.0 - np.exp(-t / atk)
 
     w0 = 2.0 * np.pi * f0 * t
@@ -312,6 +360,11 @@ def render_tine(note: int, velocity_on: int, velocity_off: int,
             tick = np.sin(2.0 * np.pi * f_bark * tb) + 0.5 * rng.standard_normal(m)
             out[:m] += (preset.bark_amp * v ** 3.0) * benv * tick
 
+    # The tine's damper is a felt pad on a metal bar rather than on wire, but
+    # the same argument applies: it absorbs the bell partial faster than the
+    # fundamental. There are only two components, so the weighting is applied
+    # to the summed signal at the carrier's weight and the bell partial carries
+    # its own extra factor above.
     t_abs = t_on + t
     out *= _damper_gain(t_abs, t_off, tau_rel, ped_t, ped_D)
     return _fade_truncated_tail(out * gain * 0.55, sr).astype(np.float32)
