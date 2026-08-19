@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Label the segments</title>
+<style>
+/* ------------------------------------------------------------------ tokens
+   Same palette as the timbre workbench, on purpose: this is the second panel
+   of the same instrument and it should not feel like a different program.
+   Every colour is painted explicitly so the page never borrows a ground. */
+:root{
+  --ground:#100E0C;
+  --panel:#191614;
+  --panel-2:#211D1A;
+  --sunk:#0B0908;
+  --line:#322C27;
+  --line-hi:#4C433B;
+  --text:#EFE7DE;
+  --dim:#A3968A;
+  --faint:#6E645B;
+  --accent:#D98E4A;
+  --accent-fill:rgba(217,142,74,.16);
+  --ok:#8FB36A;
+  --ok-fill:rgba(143,179,106,.16);
+  --hot:#D9694A;
+  --hot-fill:rgba(217,105,74,.16);
+  --cool:#57C3CE;
+  --cool-fill:rgba(87,195,206,.14);
+
+  --serif:ui-serif,"New York","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --r:3px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  background:var(--ground); color:var(--text);
+  font-family:var(--sans); font-size:14px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column; height:100vh; overflow:hidden;
+}
+h1,h2,h3{font-family:var(--serif);font-weight:600;margin:0;letter-spacing:-0.01em;}
+button,input,select{font-family:inherit;font-size:inherit;color:inherit;}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.lab{font-family:var(--mono);font-size:10px;letter-spacing:.13em;
+     text-transform:uppercase;color:var(--faint);}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+kbd{font-family:var(--mono);font-size:11px;background:var(--sunk);
+    border:1px solid var(--line-hi);border-bottom-width:2px;border-radius:var(--r);
+    padding:1px 5px;color:var(--dim);}
+
+/* ----------------------------------------------------------------- header */
+header{
+  border-bottom:1px solid var(--line); background:var(--panel);
+  padding:10px 16px; display:flex; gap:18px; align-items:center; flex:0 0 auto;
+}
+header h1{font-size:17px;}
+header h1 small{font-family:var(--sans);font-size:11px;color:var(--faint);
+                font-weight:400;letter-spacing:0;display:block;}
+.progress{flex:1 1 auto;max-width:420px;}
+.bar{height:6px;background:var(--sunk);border:1px solid var(--line);
+     border-radius:99px;overflow:hidden;}
+.bar i{display:block;height:100%;background:var(--ok);width:0%;
+       transition:width .18s ease;}
+.progress .row{display:flex;justify-content:space-between;margin-bottom:4px;}
+.hbtns{margin-left:auto;display:flex;gap:8px;align-items:center;}
+button.b{
+  background:var(--panel-2);border:1px solid var(--line-hi);border-radius:var(--r);
+  padding:5px 11px;cursor:pointer;color:var(--text);
+}
+button.b:hover{background:var(--line);}
+button.b[disabled]{opacity:.4;cursor:default;}
+
+/* ------------------------------------------------------------------- body */
+main{flex:1 1 auto;display:grid;grid-template-columns:352px minmax(0,1fr);
+     min-height:0;}
+aside{border-right:1px solid var(--line);overflow-y:auto;background:var(--panel);}
+section#detail{overflow-y:auto;padding:18px 22px 60px;min-width:0;}
+
+/* ------------------------------------------------------------- the queue */
+.takehead{
+  position:sticky;top:0;background:var(--panel-2);border-bottom:1px solid var(--line);
+  border-top:1px solid var(--line);padding:6px 12px;z-index:2;
+  display:flex;justify-content:space-between;align-items:baseline;
+}
+.row{
+  display:grid;grid-template-columns:26px 1fr 74px;gap:8px;align-items:center;
+  padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer;
+  background:none;border-left:3px solid transparent;width:100%;text-align:left;
+}
+.row:hover{background:var(--panel-2);}
+.row[aria-current="true"]{background:var(--panel-2);border-left-color:var(--accent);}
+.row .idx{font-family:var(--mono);font-size:11px;color:var(--faint);}
+.row .mid{min-width:0;}
+.row .who{display:block;font-size:12.5px;line-height:1.25;overflow:hidden;
+          text-overflow:ellipsis;white-space:nowrap;}
+.row .meta{display:block;font-family:var(--mono);font-size:10px;color:var(--faint);
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.row canvas{width:74px;height:26px;display:block;background:var(--sunk);
+            border:1px solid var(--line);border-radius:2px;}
+.row.frag .who{color:var(--faint);font-style:italic;}
+.dot{width:9px;height:9px;border-radius:99px;display:inline-block;
+     border:1px solid var(--line-hi);}
+.dot.confirm{background:var(--ok);border-color:var(--ok);}
+.dot.reject{background:var(--hot);border-color:var(--hot);}
+.dot.correct{background:var(--cool);border-color:var(--cool);}
+.dot.unknown{background:var(--faint);border-color:var(--faint);}
+
+/* ----------------------------------------------------------------- detail */
+.crumb{display:flex;gap:14px;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+      padding:14px 16px;margin-bottom:14px;}
+.card.claim{border-left:3px solid var(--accent);}
+.claim h2{font-size:22px;line-height:1.2;margin-bottom:2px;}
+.claim .sub{color:var(--dim);font-size:13px;}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 0;}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+       text-transform:uppercase;padding:2px 7px;border-radius:99px;
+       border:1px solid var(--line-hi);color:var(--dim);}
+.badge.ok{background:var(--ok-fill);border-color:var(--ok);color:var(--ok);}
+.badge.warn{background:var(--hot-fill);border-color:var(--hot);color:var(--hot);}
+.badge.info{background:var(--cool-fill);border-color:var(--cool);color:var(--cool);}
+.badge.acc{background:var(--accent-fill);border-color:var(--accent);color:var(--accent);}
+table.ev{width:100%;border-collapse:collapse;margin-top:12px;}
+table.ev td{padding:3px 0;border-top:1px solid var(--line);vertical-align:baseline;}
+table.ev td:first-child{width:120px;}
+table.ev td.v{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+
+/* --------------------------------------------------------------- transport */
+#roll{width:100%;height:170px;display:block;background:var(--sunk);
+      border:1px solid var(--line);border-radius:var(--r);cursor:crosshair;}
+.transport{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;}
+input[type=range]{flex:1 1 220px;accent-color:var(--accent);min-width:160px;}
+.tt{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--dim);
+    font-size:12px;min-width:104px;}
+.meter{width:80px;height:8px;background:var(--sunk);border:1px solid var(--line);
+       border-radius:99px;overflow:hidden;}
+.meter i{display:block;height:100%;background:var(--cool);width:0%;}
+
+/* ---------------------------------------------------------------- verdict */
+.verdicts{display:flex;gap:10px;flex-wrap:wrap;}
+button.v{
+  flex:1 1 150px;padding:12px 10px;border-radius:var(--r);cursor:pointer;
+  background:var(--panel-2);border:1px solid var(--line-hi);text-align:left;
+}
+button.v b{display:block;font-size:15px;font-weight:600;}
+button.v span{font-size:11.5px;color:var(--faint);}
+button.v:hover{border-color:var(--accent);}
+button.v.confirm[aria-pressed="true"]{background:var(--ok-fill);border-color:var(--ok);}
+button.v.reject[aria-pressed="true"]{background:var(--hot-fill);border-color:var(--hot);}
+button.v.correct[aria-pressed="true"]{background:var(--cool-fill);border-color:var(--cool);}
+button.v.unknown[aria-pressed="true"]{background:var(--panel-2);border-color:var(--dim);}
+form#fix{display:none;margin-top:14px;gap:10px;flex-wrap:wrap;}
+form#fix.on{display:flex;}
+form#fix label{display:flex;flex-direction:column;gap:3px;flex:1 1 150px;}
+form#fix input{background:var(--sunk);border:1px solid var(--line-hi);
+               border-radius:var(--r);padding:6px 8px;}
+form#fix .wide{flex:2 1 260px;}
+.answered{margin-top:12px;padding:9px 12px;border-radius:var(--r);
+          background:var(--panel-2);border:1px solid var(--line);font-size:13px;}
+.keys{margin-top:16px;color:var(--faint);font-size:12px;display:flex;
+      gap:14px;flex-wrap:wrap;}
+.status{padding:40px;color:var(--dim);}
+.err{color:var(--hot);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Label the segments
+    <small id="sub">confirm what the identifier proposed, by ear</small></h1>
+  <div class="progress">
+    <div class="row" style="display:flex;padding:0;border:0;background:none">
+      <span class="lab">answered</span>
+      <span class="lab num" id="pcount">0 / 0</span>
+    </div>
+    <div class="bar"><i id="pbar"></i></div>
+  </div>
+  <div class="hbtns">
+    <label style="display:flex;gap:6px;align-items:center;color:var(--dim);font-size:12px">
+      <input type="checkbox" id="hidefrag" checked> hide fragments <span id="fragn" class="num"></span>
+    </label>
+    <button class="b" id="rebuild" title="re-read the takes directory">Re-scan takes</button>
+  </div>
+</header>
+
+<main>
+  <aside id="queue"><div class="status" id="qstatus">loading…</div></aside>
+  <section id="detail"><div class="status">…</div></section>
+</main>
+
+<script>
+"use strict";
+/* ======================================================================
+   The state. `segs` is the queue as the server built it; `labels` is what
+   he has already said, loaded on start so closing the tab costs nothing.
+   ====================================================================== */
+const S = {data:null, segs:[], view:[], cur:0, labels:{}, ready:false};
+const $ = s => document.querySelector(s);
+const NAMES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const noteName = m => NAMES[m%12] + (Math.floor(m/12)-1);
+const clamp=(x,a,b)=>x<a?a:x>b?b:x;
+const mmss = s => {s=Math.max(0,s);const m=Math.floor(s/60);
+  return m+":"+(s-60*m).toFixed(1).padStart(4,"0");};
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g,
+  c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ======================================================================
+   AUDIO — a from-scratch string voice, same shape as the timbre workbench's.
+   Nothing is fetched: every sound on this page is computed from the note
+   events of his own take, so the page stays small and works with the network
+   off. Partial n runs at n*f0*sqrt(1+B n^2) and decays on its own time
+   constant; the damper is applied at the note's *effective* release, which is
+   the note-off extended by however long the sustain pedal stayed down. Skip
+   that last part and a nocturne comes back staccato, because he holds the
+   sound with his foot and the note-off is not when the string stops.
+   ====================================================================== */
+const AU = {ctx:null,bus:null,master:null,analyser:null,bins:null,
+            live:[],playing:false,t0:0,off:0,idx:0,seg:null,timer:null,osc:0};
+/* The scheduling horizon is deliberately wider than it needs to be. Chrome
+   throttles `setInterval` in a tab that is not visible -- down to about once a
+   second -- and a lookahead shorter than that turns the moment he switches
+   tabs into a stutter. Everything inside the horizon is already scheduled on
+   the audio clock, which is sample-accurate and is not throttled, so a slow
+   pump costs nothing. */
+const LOOKAHEAD = 2.5, TICK = 200, MAX_PEDAL_S = 8;
+
+function initAudio(){
+  if(AU.ctx) return AU.ctx;
+  AU.ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+  AU.bus = AU.ctx.createGain(); AU.bus.gain.value = 0.10;
+  const lim = AU.ctx.createDynamicsCompressor();
+  lim.threshold.value=-8; lim.knee.value=6; lim.ratio.value=12;
+  lim.attack.value=0.003; lim.release.value=0.25;
+  AU.master = AU.ctx.createGain(); AU.master.gain.value = 1.0;
+  AU.analyser = AU.ctx.createAnalyser();
+  AU.analyser.fftSize = 2048;
+  AU.bins = new Float32Array(AU.analyser.fftSize);
+  AU.bus.connect(lim); lim.connect(AU.master); AU.master.connect(AU.analyser);
+  AU.analyser.connect(AU.ctx.destination);
+  return AU.ctx;
+}
+
+/* One struck string. Six to ten partials, inharmonic, each with its own decay;
+   the damper is a floor on the fall time, never a lengthening of it. */
+function strike(t, midi, vel, relS){
+  const ctx = AU.ctx, f0 = 440*Math.pow(2,(midi-69)/12);
+  const vn = clamp(vel/127, 0.02, 1), amp = Math.pow(vn, 1.6);
+  const nyq = ctx.sampleRate*0.47;
+  const B = 0.00045;                                  // inharmonicity
+  const N = clamp(Math.round(13 - midi/11), 3, 9);    // fewer up top: cheaper, right
+  const roll = 1.25 - 0.45*(vn-0.5);                  // harder = brighter
+  const base = 3.1*Math.pow(2, -(midi-60)/26);        // bass rings longer
+  const vg = ctx.createGain(); vg.gain.value = 1; vg.connect(AU.bus);
+
+  let norm = 0, parts = [];
+  for(let n=1;n<=N;n++){
+    const fn = n*f0*Math.sqrt(1+B*n*n);
+    if(fn >= nyq) break;
+    norm += Math.pow(n,-roll); parts.push([n,fn]);
+  }
+  if(norm<=0) norm=1;
+  let endT = t;
+  const nodes = [];
+  for(const [n,fn] of parts){
+    const an = amp*Math.pow(n,-roll)/norm;
+    const tau = Math.max(0.03, base*Math.pow(n,-0.62));
+    const o = ctx.createOscillator(); o.type="sine"; o.frequency.value = fn;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(an, t+0.004);
+    g.gain.setTargetAtTime(0, t+0.004, tau);
+    // the damper: at the effective release the string is stopped, fast.
+    g.gain.setTargetAtTime(0, t+Math.max(0.05, relS), 0.085);
+    o.connect(g); g.connect(vg);
+    const stop = t + Math.max(0.05, relS) + 0.55;
+    o.start(t); o.stop(stop);
+    if(stop>endT) endT = stop;
+    nodes.push(o); AU.osc++;
+  }
+  /* hammer: a short filtered noise burst. It is most of what makes a
+     synthesised attack read as a piano rather than as an organ. */
+  const nb = noiseBuf(); const src = ctx.createBufferSource(); src.buffer = nb;
+  const bp = ctx.createBiquadFilter(); bp.type="bandpass";
+  bp.frequency.value = clamp(f0*3.2, 60, nyq*0.9); bp.Q.value = 0.9;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0,t);
+  ng.gain.linearRampToValueAtTime(0.35*amp*vn, t+0.0012);
+  ng.gain.setTargetAtTime(0, t+0.0012, 0.014);
+  src.connect(bp); bp.connect(ng); ng.connect(vg);
+  src.start(t); src.stop(t+0.2);
+  AU.live.push({vg, nodes, endT});
+}
+
+let _noise = null;
+function noiseBuf(){
+  if(_noise) return _noise;
+  const n = Math.floor(AU.ctx.sampleRate*0.5);
+  _noise = AU.ctx.createBuffer(1,n,AU.ctx.sampleRate);
+  const d = _noise.getChannelData(0);
+  for(let i=0;i<n;i++) d[i] = Math.random()*2-1;
+  return _noise;
+}
+
+/* Effective release per note: note-off, pushed out to the moment the pedal
+   next comes up if the pedal was down when the finger left. */
+function prepare(seg){
+  if(seg._prepped) return;
+  const P = (seg.pedal||[]).slice().sort((a,b)=>a[0]-b[0]);
+  const spans = [];                       // [downMs, upMs] in segment time
+  let down = null;
+  for(const [ms,v] of P){
+    if(v>=64 && down===null) down = ms;
+    else if(v<64 && down!==null){ spans.push([down,ms]); down = null; }
+  }
+  if(down!==null) spans.push([down, Infinity]);
+  seg._rel = seg.events.map(e=>{
+    const off = e[0] + Math.max(0, e[3]);
+    let rel = off;
+    for(const [a,b] of spans){ if(off>=a && off<=b){ rel = Math.min(b, off + MAX_PEDAL_S*1000); break; } }
+    return Math.max(0.06, (rel - e[0])/1000);
+  });
+  seg._span = seg.events.length ? seg.events[seg.events.length-1][0]/1000 + 2 : 1;
+  seg._lo = Math.min(...seg.events.map(e=>e[1]));
+  seg._hi = Math.max(...seg.events.map(e=>e[1]));
+  seg._prepped = true;
+}
+
+function stopAudio(){
+  if(!AU.ctx) return;
+  const now = AU.ctx.currentTime;
+  for(const v of AU.live){
+    try{ v.vg.gain.cancelScheduledValues(now);
+         v.vg.gain.setTargetAtTime(0, now, 0.015);
+         for(const o of v.nodes){ try{ o.stop(now+0.08); }catch(e){} } }catch(e){}
+  }
+  AU.live = []; AU.osc = 0;
+  AU.playing = false;
+  if(AU.timer){ clearInterval(AU.timer); AU.timer = null; }
+  paintTransport();
+}
+
+function playFrom(offSec){
+  const seg = cur(); if(!seg || !seg.events.length) return;
+  initAudio(); prepare(seg);
+  if(AU.ctx.state === "suspended") AU.ctx.resume();
+  stopAudio();
+  AU.seg = seg;
+  AU.off = clamp(offSec, 0, seg._span);
+  AU.t0 = AU.ctx.currentTime + 0.08;
+  AU.idx = 0;
+  while(AU.idx < seg.events.length && seg.events[AU.idx][0]/1000 < AU.off) AU.idx++;
+  AU.playing = true;
+  AU.timer = setInterval(pump, TICK);
+  pump();
+}
+
+function pump(){
+  const seg = AU.seg; if(!seg || !AU.playing) return;
+  const now = AU.ctx.currentTime, horizon = now + LOOKAHEAD;
+  const ev = seg.events;
+  while(AU.idx < ev.length){
+    const e = ev[AU.idx];
+    const when = AU.t0 + e[0]/1000 - AU.off;
+    if(when > horizon) break;
+    strike(Math.max(when, now), e[1], e[2], seg._rel[AU.idx]);
+    AU.idx++;
+  }
+  AU.live = AU.live.filter(v=>v.endT > now - 0.2);
+  if(AU.idx >= ev.length && playHead() > seg._span) stopAudio();
+}
+
+const playHead = () => AU.playing ? (AU.ctx.currentTime - AU.t0 + AU.off) : AU.off;
+
+/* ======================================================================
+   PIANO ROLL. He reads these faster than he can listen to them, so every
+   row in the queue carries a thumbnail and the open segment carries a full
+   one with a playhead. Click anywhere on it to play from there.
+   ====================================================================== */
+function drawRoll(cv, seg, opts){
+  opts = opts || {};
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth || 74, h = cv.clientHeight || 26;
+  if(cv.width !== Math.round(w*dpr)){ cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); }
+  const c = cv.getContext("2d");
+  c.setTransform(dpr,0,0,dpr,0,0);
+  c.clearRect(0,0,w,h);
+  const ev = seg.events; if(!ev.length) return;
+  const span = seg._span || (ev[ev.length-1][0]/1000 + 2);
+  let lo = seg._lo, hi = seg._hi;
+  if(lo===undefined){ lo = Math.min(...ev.map(e=>e[1])); hi = Math.max(...ev.map(e=>e[1])); }
+  if(hi-lo < 12){ hi = lo+12; }
+  const pad = opts.big ? 6 : 2;
+  const H = h - 2*pad;
+  const x = t => (t/span)*w;
+  const y = m => pad + H - ((m-lo)/(hi-lo))*H;
+  if(opts.big){
+    c.strokeStyle = "#241F1B"; c.lineWidth = 1;
+    for(let m=Math.ceil(lo/12)*12; m<=hi; m+=12){
+      const yy = Math.round(y(m))+0.5;
+      c.beginPath(); c.moveTo(0,yy); c.lineTo(w,yy); c.stroke();
+      c.fillStyle = "#4C433B"; c.font = "9px ui-monospace,monospace";
+      c.fillText(noteName(m), 3, yy-2);
+    }
+    for(let s=0; s<=span; s+= span>240?60:span>60?15:5){
+      const xx = Math.round(x(s))+0.5;
+      c.strokeStyle = "#241F1B"; c.beginPath(); c.moveTo(xx,0); c.lineTo(xx,h); c.stroke();
+    }
+  }
+  const hgt = opts.big ? Math.max(2.5, H/(hi-lo)*0.9) : Math.max(1.2, H/(hi-lo));
+  for(const e of ev){
+    const x0 = x(e[0]/1000), x1 = x((e[0]+Math.max(40,e[3]))/1000);
+    const v = clamp(e[2]/127,0,1);
+    c.fillStyle = "rgba(217,142,74," + (0.30 + 0.62*v).toFixed(3) + ")";
+    c.fillRect(x0, y(e[1]) - hgt/2, Math.max(opts.big?1.6:1, x1-x0), hgt);
+  }
+  if(opts.big && opts.head !== undefined){
+    const xx = Math.round(x(opts.head))+0.5;
+    c.strokeStyle = "#57C3CE"; c.lineWidth = 1.5;
+    c.beginPath(); c.moveTo(xx,0); c.lineTo(xx,h); c.stroke();
+  }
+}
+
+/* ======================================================================
+   THE QUEUE
+   ====================================================================== */
+function cur(){ return S.view[S.cur]; }
+
+function visible(){
+  const hide = $("#hidefrag").checked;
+  return S.segs.filter(s => !(hide && s.fragment));
+}
+
+function renderQueue(){
+  const q = $("#queue");
+  q.innerHTML = "";
+  let take = null;
+  S.view.forEach((s,i)=>{
+    if(s.take !== take){
+      take = s.take;
+      const h = document.createElement("div");
+      h.className = "takehead";
+      const n = S.view.filter(x=>x.take===take).length;
+      h.innerHTML = '<span style="font-family:var(--mono);font-size:11.5px">'+esc(take)+
+                    '</span><span class="lab">'+n+' seg</span>';
+      q.appendChild(h);
+    }
+    const b = document.createElement("button");
+    b.className = "row" + (s.fragment ? " frag" : "");
+    b.setAttribute("aria-current", i===S.cur ? "true":"false");
+    const lab = S.labels[s.key];
+    const claim = s.human || s.proposed;
+    b.innerHTML =
+      '<span class="idx"><span class="dot '+(lab?lab.verdict:"")+'"></span></span>'+
+      '<span class="mid"><span class="who">'+esc(claim ? claim.label : "— no proposal —")+'</span>'+
+      '<span class="meta">'+s.segment+' · '+mmss(s.start_s)+' · '+
+        s.duration_s.toFixed(0)+'s · '+s.notes+'n'+
+        (claim && claim.confidence!==undefined ? ' · '+claim.confidence.toFixed(2) : '')+
+      '</span></span>'+
+      '<canvas></canvas>';
+    b.onclick = ()=>{ select(i); };
+    q.appendChild(b);
+    prepare(s);
+    requestAnimationFrame(()=>drawRoll(b.querySelector("canvas"), s, {}));
+  });
+  if(!S.view.length) q.innerHTML = '<div class="status">nothing to show — untick “hide fragments”.</div>';
+}
+
+function select(i){
+  if(i<0 || i>=S.view.length) return;
+  stopAudio();
+  S.cur = i;
+  document.querySelectorAll("#queue .row").forEach((el,k)=>
+    el.setAttribute("aria-current", k===i ? "true":"false"));
+  const el = document.querySelectorAll("#queue .row")[i];
+  if(el) el.scrollIntoView({block:"nearest"});
+  renderDetail();
+}
+
+function step(d){
+  select(clamp(S.cur+d, 0, S.view.length-1));
+}
+function nextUnanswered(){
+  for(let k=S.cur+1;k<S.view.length;k++) if(!S.labels[S.view[k].key]) return select(k);
+  for(let k=0;k<S.view.length;k++) if(!S.labels[S.view[k].key]) return select(k);
+  step(1);
+}
+
+/* ======================================================================
+   THE DETAIL PANEL
+   ====================================================================== */
+function renderDetail(){
+  const s = cur(); const d = $("#detail");
+  if(!s){ d.innerHTML = '<div class="status">no segment selected.</div>'; return; }
+  prepare(s);
+  const claim = s.human || s.proposed;
+  const p = s.proposed;
+  const lab = S.labels[s.key];
+
+  const badges = [];
+  if(s.human) badges.push('<span class="badge info">identified by Jake, not by machine</span>');
+  if(p && p.announced) badges.push('<span class="badge ok">the runner announced this</span>');
+  if(p && !p.announced) badges.push('<span class="badge warn">'+
+      (s.human ? "the identifier’s own guess was below" : "below")+' the '+
+      S.data.min_confidence+' bar — never announced</span>');
+  if(p && p.circular) badges.push('<span class="badge warn">circular: this corpus theme was derived from this take</span>');
+  if(s.events_truncated) badges.push('<span class="badge warn">audio bounded to the first '+
+      S.data.max_events+' notes ('+s.events_span_s.toFixed(0)+'s of '+s.duration_s.toFixed(0)+'s)</span>');
+  if(s.fragment) badges.push('<span class="badge">fragment</span>');
+
+  d.innerHTML =
+  '<div class="crumb"><span class="lab">'+esc(s.take)+'</span>'+
+    '<span class="lab">segment '+s.segment+' of this take</span>'+
+    '<span class="lab">starts '+mmss(s.start_s)+'</span>'+
+    '<span class="lab">'+s.duration_s.toFixed(1)+' s</span>'+
+    '<span class="lab">'+s.notes+' notes</span>'+
+    '<span class="lab">'+(S.cur+1)+' / '+S.view.length+'</span></div>'+
+
+  '<div class="card claim">'+
+    '<span class="lab">proposed label</span>'+
+    '<h2>'+esc(claim ? claim.label : "no proposal — the identifier had nothing")+'</h2>'+
+    (claim ? '<div class="sub">'+
+        (claim.composer ? esc(claim.composer)+' · ' : '')+esc(claim.work)+
+        (claim.opus ? ' · Op. '+esc(claim.opus) : '')+
+        (claim.number ? ' No. '+esc(claim.number) : '')+'</div>' : '')+
+    '<div class="badges">'+badges.join("")+'</div>'+
+    (p ? '<table class="ev">'+
+      /* When Jake named it himself the headline is his, so the machine's
+         answer gets its own row rather than borrowing his label's authority
+         for its confidence figure. */
+      (s.human ? tr("identifier said", esc(p.label)) : "")+
+      tr("confidence", p.confidence.toFixed(3)+"  (bar "+S.data.min_confidence+")")+
+      tr("aligned hits", p.hits+" on the "+esc(p.line)+" line, density "+p.density)+
+      tr("margin", p.margin.toFixed(3)+" over the runner-up")+
+      tr("runner-up", (p.runner_up ? esc(p.runner_up)+" ("+p.runner_up_hits+" hits)" : "—")) +
+      (p.source_note ? tr("corpus entry", esc(p.source_note)) : "")+
+      '</table>' : '')+
+  '</div>'+
+
+  '<div class="card">'+
+    '<span class="lab">listen — synthesised in this page from this segment’s own notes</span>'+
+    '<canvas id="roll"></canvas>'+
+    '<div class="transport">'+
+      '<button class="b" id="play">▶ Play</button>'+
+      '<input type="range" id="scrub" min="0" max="'+s._span.toFixed(2)+'" step="0.05" value="0">'+
+      '<span class="tt" id="tt">0:00.0 / '+mmss(s._span)+'</span>'+
+      '<span class="lab">audio</span><span class="meter"><i id="mtr"></i></span>'+
+      '<span class="lab num" id="ctxst">—</span>'+
+    '</div>'+
+    '<div class="keys"><span><kbd>space</kbd> play / stop</span>'+
+      '<span><kbd>←</kbd><kbd>→</kbd> ±5 s</span>'+
+      '<span><kbd>1</kbd>…<kbd>4</kbd> jump to quarter</span>'+
+      '<span>click the roll to play from there</span></div>'+
+  '</div>'+
+
+  '<div class="card">'+
+    '<span class="lab">your answer</span>'+
+    '<div class="verdicts" style="margin-top:10px">'+
+      vbtn("confirm","Confirm","C","the label is right")+
+      vbtn("reject","Reject","R","wrong piece")+
+      vbtn("correct","Correct it","X","type what it actually is")+
+      vbtn("unknown","Don’t know","U","can’t tell from this")+
+    '</div>'+
+    '<form id="fix">'+
+      '<label><span class="lab">composer</span><input id="f-composer" autocomplete="off"></label>'+
+      '<label class="wide"><span class="lab">work</span><input id="f-work" autocomplete="off"></label>'+
+      '<label style="flex:0 1 90px"><span class="lab">opus</span><input id="f-opus" autocomplete="off"></label>'+
+      '<label style="flex:0 1 90px"><span class="lab">no.</span><input id="f-number" autocomplete="off"></label>'+
+      '<label class="wide"><span class="lab">note (optional)</span><input id="f-note" autocomplete="off"></label>'+
+      '<button class="b" type="submit" style="align-self:end">Save correction ⏎</button>'+
+    '</form>'+
+    '<div id="ans"></div>'+
+    '<div class="keys"><span><kbd>C</kbd> confirm</span><span><kbd>R</kbd> reject</span>'+
+      '<span><kbd>X</kbd> correct</span><span><kbd>U</kbd> don’t know</span>'+
+      '<span><kbd>J</kbd>/<kbd>K</kbd> next / previous</span>'+
+      '<span><kbd>N</kbd> next unanswered</span>'+
+      '<span>answers are written to disk on every press</span></div>'+
+  '</div>';
+
+  $("#play").onclick = ()=> AU.playing ? stopAudio() : playFrom(playHead()>=s._span?0:playHead());
+  $("#scrub").oninput = e => { const v = parseFloat(e.target.value);
+    if(AU.playing) playFrom(v); else { AU.off = v; paintTransport(); } };
+  $("#roll").onclick = e => {
+    const r = e.currentTarget.getBoundingClientRect();
+    playFrom(((e.clientX-r.left)/r.width)*s._span);
+  };
+  document.querySelectorAll("button.v").forEach(b=>{
+    b.onclick = ()=> b.dataset.v==="correct" ? openFix() : answer(b.dataset.v, null);
+  });
+  $("#fix").onsubmit = e => { e.preventDefault(); saveFix(); };
+  if(lab && lab.verdict === "correct") openFix(lab.correction);
+  paintAnswer();
+  AU.off = 0;
+  requestAnimationFrame(()=>{ drawRoll($("#roll"), s, {big:true, head:0}); paintTransport(); });
+}
+const tr = (k,v) => '<tr><td class="lab">'+k+'</td><td class="v">'+v+'</td></tr>';
+const vbtn = (v,t,k,sub) => '<button class="v '+v+'" data-v="'+v+'" aria-pressed="false">'+
+  '<b>'+t+' <kbd>'+k+'</kbd></b><span>'+sub+'</span></button>';
+
+function openFix(pre){
+  const f = $("#fix"); if(!f) return;
+  f.classList.add("on");
+  const s = cur(), claim = s.human || s.proposed;
+  const src = pre || (claim ? claim : {});
+  if(!$("#f-composer").value) $("#f-composer").value = src.composer || "";
+  if(!$("#f-work").value) $("#f-work").value = src.work || "";
+  if(!$("#f-opus").value) $("#f-opus").value = src.opus || "";
+  if(!$("#f-number").value) $("#f-number").value = src.number || "";
+  if(pre && pre.note) $("#f-note").value = pre.note;
+  $("#f-composer").focus(); $("#f-composer").select();
+}
+function saveFix(){
+  const c = {composer:$("#f-composer").value.trim(), work:$("#f-work").value.trim(),
+             opus:$("#f-opus").value.trim(), number:$("#f-number").value.trim(),
+             note:$("#f-note").value.trim()};
+  if(!c.composer && !c.work){ $("#f-work").focus(); return; }
+  answer("correct", c);
+}
+
+function paintAnswer(){
+  const s = cur(), lab = S.labels[s.key], el = $("#ans");
+  document.querySelectorAll("button.v").forEach(b=>
+    b.setAttribute("aria-pressed", lab && lab.verdict===b.dataset.v ? "true":"false"));
+  if(!el) return;
+  if(!lab){ el.innerHTML = ""; return; }
+  const c = lab.correction;
+  el.innerHTML = '<div class="answered"><b>'+esc(lab.verdict)+'</b>'+
+    (c ? ' → '+esc([c.composer,c.work,c.opus?"Op. "+c.opus:"",c.number?"No. "+c.number:""]
+          .filter(Boolean).join(", ")) + (c.note ? ' — '+esc(c.note) : '') : '')+
+    ' <span class="lab" style="margin-left:8px">'+esc(lab.timestamp||"")+
+    (lab.revised_from ? ' · revised from '+esc(lab.revised_from) : '')+'</span>'+
+    ' <button class="b" id="clearv" style="float:right;padding:2px 8px">clear</button></div>';
+  $("#clearv").onclick = ()=> answer("cleared", null);
+}
+
+/* ======================================================================
+   WRITE-BACK. Every press is a POST. Nothing is batched, nothing waits for
+   a submit button, because he closes tabs.
+   ====================================================================== */
+async function answer(verdict, correction){
+  const s = cur();
+  const rec = {
+    key:s.key, take:s.take, segment:s.segment,
+    start_s:s.start_s, end_s:s.end_s, duration_s:s.duration_s, notes:s.notes,
+    proposed: s.human || s.proposed || null,
+    verdict, correction: correction || null
+  };
+  flash("saving…");
+  try{
+    const r = await fetch("/label", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify(rec)});
+    const j = await r.json();
+    if(!r.ok || j.error) throw new Error(j.error || ("HTTP "+r.status));
+    if(verdict === "cleared") delete S.labels[s.key];
+    else { rec.timestamp = new Date().toISOString(); S.labels[s.key] = rec; }
+    flash(j.count + " on disk");
+    paintProgress(); paintAnswer(); renderQueue();
+    document.querySelectorAll("#queue .row").forEach((el,k)=>
+      el.setAttribute("aria-current", k===S.cur ? "true":"false"));
+    if(verdict !== "cleared"){ stopAudio(); nextUnanswered(); }
+  }catch(err){
+    flash("NOT SAVED: "+err.message, true);
+  }
+}
+let flashT = null;
+function flash(msg, bad){
+  const el = $("#sub");
+  el.textContent = msg; el.className = bad ? "err" : "";
+  clearTimeout(flashT);
+  flashT = setTimeout(()=>{ el.textContent = S.data ?
+    (S.data.corpus_themes.toLocaleString()+" themes · answers → "+S.data.labels_path) :
+    "confirm what the identifier proposed, by ear"; el.className=""; }, 2600);
+}
+
+function paintProgress(){
+  const total = S.view.length;
+  const done = S.view.filter(s=>S.labels[s.key]).length;
+  $("#pcount").textContent = done + " / " + total;
+  $("#pbar").style.width = total ? (100*done/total).toFixed(1)+"%" : "0%";
+}
+
+/* live transport readout, and the mechanical proof the graph is alive */
+function frame(){
+  if(S.ready && S.view.length){
+    const s = cur();
+    if(s && $("#roll")){
+      const t = clamp(playHead(), 0, s._span);
+      drawRoll($("#roll"), s, {big:true, head:t});
+      $("#tt").textContent = mmss(t) + " / " + mmss(s._span);
+      if(!AU.playing || document.activeElement !== $("#scrub")) $("#scrub").value = t.toFixed(2);
+      $("#play").textContent = AU.playing ? "■ Stop" : "▶ Play";
+      /* guard on the analyser, not the context: an offline render swaps the
+         context out from under this loop while the analyser is still null. */
+      if(AU.analyser){
+        AU.analyser.getFloatTimeDomainData(AU.bins);
+        let sum=0; for(let i=0;i<AU.bins.length;i++) sum += AU.bins[i]*AU.bins[i];
+        const rms = Math.sqrt(sum/AU.bins.length);
+        $("#mtr").style.width = clamp(rms*450,0,100).toFixed(1)+"%";
+        $("#ctxst").textContent = AU.ctx.state + " " + rms.toExponential(2);
+      } else if(!AU.ctx) $("#ctxst").textContent = "no context";
+    }
+  }
+  requestAnimationFrame(frame);
+}
+function paintTransport(){ /* the rAF loop does the work; this forces one now */ }
+
+/* ======================================================================
+   KEYBOARD. He goes through dozens of these; reaching for the mouse each
+   time is the thing that makes it feel inhuman.
+   ====================================================================== */
+document.addEventListener("keydown", e=>{
+  const inField = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if(inField){
+    if(e.key === "Escape"){ document.activeElement.blur(); }
+    return;                                   // Enter is the form's own
+  }
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  const s = cur();
+  if(k === " "){ e.preventDefault(); AU.playing ? stopAudio() : playFrom(playHead()); return; }
+  if(k === "arrowleft"){ e.preventDefault(); playFrom(Math.max(0, playHead()-5)); return; }
+  if(k === "arrowright"){ e.preventDefault(); playFrom(playHead()+5); return; }
+  if(k === "arrowdown" || k === "j"){ e.preventDefault(); step(1); return; }
+  if(k === "arrowup" || k === "k"){ e.preventDefault(); step(-1); return; }
+  if(k === "n"){ e.preventDefault(); nextUnanswered(); return; }
+  if(s && "1234".includes(k)){ e.preventDefault();
+    playFrom(s._span*(parseInt(k)-1)/4); return; }
+  if(k === "c"){ e.preventDefault(); answer("confirm", null); return; }
+  if(k === "r"){ e.preventDefault(); answer("reject", null); return; }
+  if(k === "x"){ e.preventDefault(); openFix(); return; }
+  if(k === "u" || k === "?"){ e.preventDefault(); answer("unknown", null); return; }
+});
+
+/* ======================================================================
+   BOOT. The segment list is rebuilt from disk by the server; a 44-minute
+   take takes the identifier the better part of a minute to replay, so the
+   page polls rather than hanging on one request.
+   ====================================================================== */
+async function boot(){
+  try{
+    const lr = await fetch("/labels.json");
+    const ld = await lr.json();
+    S.labels = ld.labels || {};
+  }catch(e){ S.labels = {}; }
+
+  for(;;){
+    let j;
+    try{ j = await (await fetch("/segments.json")).json(); }
+    catch(e){
+      $("#qstatus").innerHTML = '<span class="err">no server. Start it with<br>'+
+        '<code>~/workspace/audio/.venv/bin/python ~/workspace/audio/fp30x-studio/docs/serve_labels.py</code></span>';
+      return;
+    }
+    if(j.status === "ready"){ S.data = j; break; }
+    if(j.status === "error"){
+      $("#qstatus").innerHTML = '<span class="err">build failed: '+esc(j.detail)+'</span>';
+      return;
+    }
+    $("#qstatus").textContent = "replaying the takes through the identifier — " + (j.detail||"");
+    await new Promise(r=>setTimeout(r,1200));
+  }
+  S.segs = S.data.segments;
+  S.segs.forEach(prepare);
+  applyFilter(true);
+  S.ready = true;
+  flash("");
+  $("#hidefrag").onchange = ()=>applyFilter(false);
+  $("#rebuild").onclick = async ()=>{
+    $("#rebuild").disabled = true;
+    await fetch("/rebuild");
+    setTimeout(()=>location.reload(), 800);
+  };
+}
+
+function applyFilter(first){
+  const keep = cur() ? cur().key : null;
+  S.view = visible();
+  $("#fragn").textContent = "(" + S.segs.filter(s=>s.fragment).length + ")";
+  S.cur = Math.max(0, S.view.findIndex(s=>s.key===keep));
+  renderQueue(); paintProgress();
+  if(first){
+    const i = S.view.findIndex(s=>!S.labels[s.key]);
+    S.cur = i < 0 ? 0 : i;
+  }
+  select(S.cur);
+}
+
+window.addEventListener("resize", ()=>{ if(S.ready) renderDetail(); });
+document.addEventListener("pointerdown", ()=>{
+  if(AU.ctx && AU.ctx.state === "suspended") AU.ctx.resume();
+});
+requestAnimationFrame(frame);
+boot();
+
+/* Render the open segment's first `sec` seconds through an OfflineAudioContext,
+   using the same `strike` the live path uses, and report what came out. A live
+   analyser only tells you the graph is loud *now*, and a browser that has
+   throttled its timers will read zero while the synthesis is perfectly fine.
+   This is the deterministic version of the same question: no wall clock, no
+   scheduler, just the samples. */
+async function renderOffline(sec){
+  sec = sec || 6;
+  const seg = cur(); if(!seg || !seg.events.length) return null;
+  prepare(seg);
+  const keep = {ctx:AU.ctx, bus:AU.bus, live:AU.live, noise:_noise};
+  const off = new OfflineAudioContext(1, Math.ceil(44100*sec), 44100);
+  AU.ctx = off; AU.bus = off.createGain(); AU.bus.gain.value = 0.10;
+  AU.bus.connect(off.destination); AU.live = []; _noise = null;
+  try{
+    for(let i=0;i<seg.events.length;i++){
+      const t = seg.events[i][0]/1000;
+      if(t > sec-0.2) break;
+      strike(t, seg.events[i][1], seg.events[i][2], seg._rel[i]);
+    }
+    const buf = await off.startRendering();
+    const d = buf.getChannelData(0);
+    let peak=0, sum=0;
+    for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>peak) peak=a; sum+=d[i]*d[i]; }
+    return {seconds:sec, samples:d.length, peak:+peak.toFixed(5),
+            rms:+Math.sqrt(sum/d.length).toFixed(5)};
+  } finally {
+    AU.ctx = keep.ctx; AU.bus = keep.bus; AU.live = keep.live; _noise = keep.noise;
+  }
+}
+
+/* a handle for driving this from the console, which is how it was verified */
+window.LABELS = {
+  S, AU, playFrom, stopAudio, answer, select, cur, renderOffline,
+  get audio(){ return AU.ctx ? {state:AU.ctx.state, voices:AU.live.length,
+                                oscillators:AU.osc} : "no context"; },
+  rms(){ if(!AU.analyser) return 0; AU.analyser.getFloatTimeDomainData(AU.bins);
+         let s=0; for(let i=0;i<AU.bins.length;i++) s+=AU.bins[i]*AU.bins[i];
+         return Math.sqrt(s/AU.bins.length); }
+};
+</script>
+</body>
+</html>
