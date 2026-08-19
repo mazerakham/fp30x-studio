@@ -1,0 +1,148 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rubato as a Warp</title>
+<style>
+:root{--bg:#0e1116;--panel:#161b22;--line:#2a323d;--ink:#e6edf3;--dim:#9aa7b4;
+--dim2:#6e7d8c;--acc:#7ee0d6;--acc2:#8ab4f8;--warn:#f0b45e;
+--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+line-height:1.6;font-size:15.5px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1060px;margin:0 auto;padding:44px 22px 100px}
+h1{font-size:29px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{color:var(--dim);margin:0 0 30px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.11em;color:var(--dim2);
+margin:44px 0 14px;font-weight:600}
+.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:26px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.stat .v{font-size:31px;font-weight:650;letter-spacing:-.02em;font-family:var(--mono)}
+.stat .k{color:var(--dim);font-size:12.5px;margin-top:5px}
+.big .v{color:var(--acc)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+padding:20px;margin:16px 0}
+.cap{color:var(--dim);font-size:13.5px;margin-top:10px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 12px;text-align:left;border-bottom:1px solid var(--line)}
+th{color:var(--dim2);font-weight:600;font-size:12px;text-transform:uppercase;
+letter-spacing:.06em}
+td.n{font-family:var(--mono)}
+.up{color:var(--warn)} .dn{color:#e08a8a}
+math{font-size:1.08em}
+.eq{margin:16px 0;text-align:center}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:840px){.two{grid-template-columns:1fr}}
+.warnbox{border-color:#5a4426;background:#1a1610}
+code{font-family:var(--mono);font-size:.92em;background:#1c232c;padding:1px 5px;
+border-radius:4px}
+footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
+color:var(--dim2);font-size:12.5px}
+</style>
+<div class="wrap">
+<h1>Rubato as a warp</h1>
+<p class="sub">Chopin, Nocturne in F minor, Op. 55 No. 1 — your false start against the
+opening of the complete performance, 19 August 2026.</p>
+
+<div class="hero">
+  <div class="stat big"><div class="v">4.97°</div>
+    <div class="k">Fisher–Rao angle from identity (max 90°)</div></div>
+  <div class="stat"><div class="v">0.170</div>
+    <div class="k">‖u′‖<sub>L²</sub> — displacement energy</div></div>
+  <div class="stat"><div class="v">0.69–1.38×</div>
+    <div class="k">local tempo range</div></div>
+  <div class="stat"><div class="v">47</div>
+    <div class="k">matched onsets (6 dropped, 15 added)</div></div>
+</div>
+
+<div class="card">
+<p><b>The finding.</b> Locally your tempo swings by a factor of two — from
+0.69× to 1.38× of uniform. Globally the two performances sit
+<b>4.97 degrees apart</b> on a scale where orthogonal is ninety. You do not play
+it the same way twice in any local sense, and you play it almost identically in the
+global one. The rubato is not noise; it is reproducible structure.</p>
+</div>
+
+<h2>The tempo curve</h2>
+<div class="card"><svg viewBox="0 0 980 380" width="100%" role="img" aria-label="log tempo ratio over the performance"><line x1="56" y1="182.8" x2="924" y2="182.8" stroke="#5b6472" stroke-width="1.5" stroke-dasharray="5 4"/><rect x="56" y="56" width="868" height="268" fill="none" stroke="#2a323d"/><path d="M56.00,186.18L78.05,186.18L78.05,185.29L85.88,185.29L85.88,199.00L108.80,199.00L108.80,192.75L117.07,192.75L117.07,187.10L148.83,187.10L148.83,183.75L179.59,183.75L179.59,184.79L209.61,184.79L209.61,173.38L237.75,173.38L237.75,168.82L267.63,168.82L267.63,189.40L297.37,189.40L297.37,284.49L346.98,284.49L346.98,298.72L398.33,298.72L398.33,162.20L405.00,162.20L405.00,147.23L411.09,147.23L411.09,147.17L443.15,147.17L443.15,96.16L474.48,96.16L474.48,166.68L504.94,166.68L504.94,201.48L534.10,201.48L534.10,276.26L588.06,276.26L588.06,174.42L615.62,174.42L615.62,117.96L645.21,117.96L645.21,136.74L662.03,136.74L662.03,238.05L680.17,238.05L680.17,188.30L685.39,188.30L685.39,232.87L689.88,232.87L689.88,242.50L694.38,242.50L694.38,235.44L697.86,235.44L697.86,216.97L701.05,216.97L701.05,205.48L703.95,205.48L703.95,183.45L706.71,183.45L706.71,172.35L709.76,172.35L709.76,235.06L717.15,235.06L717.15,224.89L721.22,224.89L721.22,218.65L731.80,218.65L731.80,179.61L738.91,179.61L738.91,178.89L743.55,178.89L743.55,195.37L762.56,195.37L762.56,83.45L768.65,83.45L768.65,136.31L798.53,136.31L798.53,120.43L828.26,120.43L828.26,81.28L831.46,81.28L831.46,136.14L859.74,136.14L859.74,115.17L882.51,115.17L882.51,145.52L891.94,145.52L891.94,150.77L893.54,150.77L893.54,163.35L924.00,163.35" fill="none" stroke="#8ab4f8" stroke-width="2.4"/><line x1="398.33" y1="56" x2="398.33" y2="324" stroke="#f0b45e" stroke-width="1" opacity=".55"/><text x="398.33" y="48" fill="#f0b45e" font-size="11" text-anchor="middle">11.8s</text><line x1="762.56" y1="56" x2="762.56" y2="324" stroke="#f0b45e" stroke-width="1" opacity=".55"/><text x="762.56" y="48" fill="#f0b45e" font-size="11" text-anchor="middle">24.4s</text><line x1="588.06" y1="56" x2="588.06" y2="324" stroke="#f0b45e" stroke-width="1" opacity=".55"/><text x="588.06" y="48" fill="#f0b45e" font-size="11" text-anchor="middle">18.3s</text><line x1="662.03" y1="56" x2="662.03" y2="324" stroke="#e08a8a" stroke-width="1" opacity=".55"/><text x="662.03" y="48" fill="#e08a8a" font-size="11" text-anchor="middle">20.9s</text><line x1="297.37" y1="56" x2="297.37" y2="324" stroke="#e08a8a" stroke-width="1" opacity=".55"/><text x="297.37" y="48" fill="#e08a8a" font-size="11" text-anchor="middle">8.3s</text><line x1="534.10" y1="56" x2="534.10" y2="324" stroke="#e08a8a" stroke-width="1" opacity=".55"/><text x="534.10" y="48" fill="#e08a8a" font-size="11" text-anchor="middle">16.5s</text><text x="46" y="186.8" fill="#6e7d8c" font-size="11" text-anchor="end">same</text><text x="46" y="277.7" fill="#6e7d8c" font-size="11" text-anchor="end">0.75×</text><text x="490.0" y="366" fill="#9aa7b4" font-size="13" text-anchor="middle">normalised time through the false start</text><text x="16" y="190.0" fill="#9aa7b4" font-size="13" text-anchor="middle" transform="rotate(-90 16 190.0)">log φ′ — local tempo ratio</text></svg>
+<p class="cap">log φ′ — how much faster or slower the second performance runs at each
+moment. Flat at the dashed line would mean the two are related by a constant tempo
+scaling. Piecewise constant because the minimiser of the H¹ energy is piecewise linear:
+tempo changes at phrase boundaries and holds between them. Marked lines are the six
+largest changes.</p></div>
+
+<h2>The warp against the identity</h2>
+<div class="two">
+<div class="card"><svg viewBox="0 0 560 560" width="100%" role="img" aria-label="warp function against the diagonal"><line x1="52" y1="508" x2="508" y2="52" stroke="#5b6472" stroke-width="1.5" stroke-dasharray="5 4"/><rect x="52" y="52" width="456" height="456" fill="none" stroke="#2a323d"/><polyline points="52.00,508.00 63.58,496.54 67.70,492.46 79.74,481.02 84.08,476.81 100.77,460.35 116.93,444.24 132.70,428.57 147.48,413.34 163.18,396.93 178.80,381.63 204.86,362.74 231.84,344.05 235.34,340.31 238.55,336.73 255.39,317.87 271.85,296.22 287.85,279.38 303.17,264.94 331.51,243.85 345.99,228.99 361.54,209.90 370.38,199.67 379.90,191.68 382.65,188.98 385.01,186.96 387.37,185.01 389.20,183.46 390.88,181.96 392.40,180.54 393.85,179.09 395.45,177.44 399.33,174.14 401.47,172.28 407.03,167.31 410.76,163.54 413.20,161.07 423.19,151.48 426.39,147.09 442.08,128.91 457.71,109.88 459.38,107.56 474.24,90.34 486.21,75.52 491.16,69.95 492.00,69.02 508.00,52.00" fill="none" stroke="#7ee0d6" stroke-width="2.5"/><circle cx="52.00" cy="508.00" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="63.58" cy="496.54" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="67.70" cy="492.46" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="79.74" cy="481.02" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="84.08" cy="476.81" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="100.77" cy="460.35" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="116.93" cy="444.24" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="132.70" cy="428.57" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="147.48" cy="413.34" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="163.18" cy="396.93" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="178.80" cy="381.63" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="204.86" cy="362.74" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="231.84" cy="344.05" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="235.34" cy="340.31" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="238.55" cy="336.73" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="255.39" cy="317.87" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="271.85" cy="296.22" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="287.85" cy="279.38" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="303.17" cy="264.94" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="331.51" cy="243.85" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="345.99" cy="228.99" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="361.54" cy="209.90" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="370.38" cy="199.67" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="379.90" cy="191.68" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="382.65" cy="188.98" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="385.01" cy="186.96" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="387.37" cy="185.01" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="389.20" cy="183.46" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="390.88" cy="181.96" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="392.40" cy="180.54" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="393.85" cy="179.09" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="395.45" cy="177.44" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="399.33" cy="174.14" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="401.47" cy="172.28" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="407.03" cy="167.31" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="410.76" cy="163.54" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="413.20" cy="161.07" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="423.19" cy="151.48" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="426.39" cy="147.09" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="442.08" cy="128.91" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="457.71" cy="109.88" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="459.38" cy="107.56" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="474.24" cy="90.34" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="486.21" cy="75.52" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="491.16" cy="69.95" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="492.00" cy="69.02" r="2.6" fill="#7ee0d6" opacity=".85"/><circle cx="508.00" cy="52.00" r="2.6" fill="#7ee0d6" opacity=".85"/><text x="280.0" y="546" fill="#9aa7b4" font-size="13" text-anchor="middle">false start, normalised time</text><text x="16" y="280.0" fill="#9aa7b4" font-size="13" text-anchor="middle" transform="rotate(-90 16 280.0)">full performance, normalised time</text><text x="335" y="271" fill="#5b6472" font-size="12" transform="rotate(-45 335 271)">identity</text></svg>
+<p class="cap">φ maps normalised time in the false start to normalised time in the full
+performance. The dashed diagonal is the identity — <em>played it exactly the same way</em>.
+Dots are the 47 matched onsets.</p></div>
+<div class="card">
+<h3 style="margin-top:0;font-size:15px">Where the tempo turns</h3>
+<table><thead><tr><th>into take</th><th>norm.</th><th>Δ log φ′</th><th>ratio</th></tr></thead>
+<tbody><tr><td class="n">11.8 s</td><td class="n">0.394</td><td class="n up">+0.432</td><td class="n up">1.54×</td></tr><tr><td class="n">24.4 s</td><td class="n">0.814</td><td class="n up">+0.354</td><td class="n up">1.43×</td></tr><tr><td class="n">18.3 s</td><td class="n">0.613</td><td class="n up">+0.322</td><td class="n up">1.38×</td></tr><tr><td class="n">20.9 s</td><td class="n">0.698</td><td class="n dn">-0.321</td><td class="n dn">0.73×</td></tr><tr><td class="n">8.3 s</td><td class="n">0.278</td><td class="n dn">-0.301</td><td class="n dn">0.74×</td></tr><tr><td class="n">16.5 s</td><td class="n">0.551</td><td class="n dn">-0.237</td><td class="n dn">0.79×</td></tr><tr><td class="n">14.4 s</td><td class="n">0.482</td><td class="n dn">-0.223</td><td class="n dn">0.80×</td></tr><tr><td class="n">22.5 s</td><td class="n">0.753</td><td class="n dn">-0.198</td><td class="n dn">0.82×</td></tr></tbody></table>
+<p class="cap">They alternate — slow, fast, slow, fast — at intervals of roughly 2.5 to 4
+seconds. That spacing is phrase-length, and the alternation looks like taking time at
+phrase ends and pushing through the middles. <b>Unverified against the score.</b></p>
+</div></div>
+
+<h2>The formulation</h2>
+<div class="card">
+<p>Normalise both performances to <math><mo>[</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo>]</mo></math>,
+so the identity exists in the space. Write
+<math><mi>φ</mi><mo>=</mo><mi>id</mi><mo>+</mo><mi>u</mi></math> with
+<math><mi>u</mi><mo>(</mo><mn>0</mn><mo>)</mo><mo>=</mo><mi>u</mi><mo>(</mo><mn>1</mn><mo>)</mo><mo>=</mo><mn>0</mn></math>.
+Then <math><msup><mi>φ</mi><mo>′</mo></msup><mo>=</mo><mn>1</mn><mo>+</mo><msup><mi>u</mi><mo>′</mo></msup></math>,
+the homeomorphism condition is exactly
+<math><msup><mi>u</mi><mo>′</mo></msup><mo>&gt;</mo><mo>−</mo><mn>1</mn></math>, and we minimise</p>
+<div class="eq"><math display="block"><mrow>
+<mi>E</mi><mo>[</mo><mi>u</mi><mo>]</mo><mo>=</mo>
+<munder><mo>∑</mo><mi>i</mi></munder>
+<msup><mrow><mo>(</mo><msub><mi>t</mi><mi>i</mi></msub><mo>+</mo><mi>u</mi>
+<mo>(</mo><msub><mi>t</mi><mi>i</mi></msub><mo>)</mo><mo>−</mo>
+<msub><mi>s</mi><mi>i</mi></msub><mo>)</mo></mrow><mn>2</mn></msup>
+<mo>+</mo><mi>λ</mi><msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup>
+<msup><mrow><mo>|</mo><msup><mi>u</mi><mo>′</mo></msup><mo>|</mo></mrow><mn>2</mn></msup>
+</mrow></math></div>
+<p>over <math><msubsup><mi>H</mi><mn>0</mn><mn>1</mn></msubsup></math>. Because the endpoint
+constraint fixes <math><msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup><msup><mi>φ</mi><mo>′</mo></msup><mo>=</mo><mn>1</mn></math>,
+completing the square gives
+<math><msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup><msup><mrow><mo>|</mo><msup><mi>φ</mi><mo>′</mo></msup><mo>|</mo></mrow><mn>2</mn></msup><mo>=</mo><mn>1</mn><mo>+</mo><msubsup><mrow><mo>∥</mo><msup><mi>φ</mi><mo>′</mo></msup><mo>−</mo><mn>1</mn><mo>∥</mo></mrow><mrow><msup><mi>L</mi><mn>2</mn></msup></mrow><mn>2</mn></msubsup></math> —
+so the penalty is <b>exactly the variance of tempo about its own mean</b>. Minimising it
+is minimising rubato in the plainest possible sense, and the identity is its unique zero.</p>
+<p>Euler–Lagrange gives <math><msup><mi>u</mi><mo>″</mo></msup><mo>=</mo><mn>0</mn></math>
+away from the knots, so the minimiser is piecewise linear with corners at matched onsets.
+The corners are kept deliberately: a pianist changes tempo abruptly at phrase boundaries,
+and an H² penalty would erase exactly the feature worth seeing.</p>
+<p>The <b>Fisher–Rao angle</b> is the better cross-piece statistic. The
+<math><msup><mi>Ḣ</mi><mn>1</mn></msup></math> metric on Diff⁺([0,1]) <em>is</em> Fisher–Rao
+up to a factor of ¼, with the square-root velocity map
+<math><mi>ψ</mi><mo>=</mo><msqrt><msup><mi>φ</mi><mo>′</mo></msup></msqrt></math> as the
+isometry, so distance is arc length on a sphere:
+<math><mi>d</mi><mo>=</mo><mi>arccos</mi><mo>⟨</mo><msqrt><msup><msub><mi>φ</mi><mn>1</mn></msub><mo>′</mo></msup></msqrt><mo>,</mo><msqrt><msup><msub><mi>φ</mi><mn>2</mn></msub><mo>′</mo></msup></msqrt><mo>⟩</mo></math>.
+It is dimensionless, bounded by 90°, and comparable across pieces of different lengths —
+which a residual in seconds is not.</p>
+</div>
+
+<h2>What to distrust</h2>
+<div class="card warnbox">
+<p><b>6 onsets in the false start found no partner, and 15 appeared
+only in the full performance.</b> Of 73 onset clusters, 47 matched. A
+third of the false start is unaccounted for — ornaments taken differently, or notes simply
+not played the same. The warp describes the matched skeleton, not the whole performance.</p>
+<p>λ landed at <code>0.631</code> by generalised cross-validation, giving
+<code>18.0</code> effective degrees of freedom over 47 knots — the curve
+is smoothed to about a third of the freedom the data would allow.</p>
+<p>Timestamps sit on a <b>5.000 ms lattice</b> imposed by the Bluetooth MIDI link. No
+claim here is finer than that. The constraint
+<math><msup><mi>u</mi><mo>′</mo></msup><mo>&gt;</mo><mo>−</mo><mn>1</mn></math> never went
+active, so φ is a genuine homeomorphism rather than one clipped into being.</p>
+<p>Durations: false start 29.9 s, matched span of the full performance 31.3 s.
+The phrase-boundary reading of the kinks is <b>a hypothesis, not a result</b> — it needs
+checking against the score.</p>
+</div>
+
+<footer>Generated 19 August 2026 from
+<code>fp30x_studio/align/</code> ·
+<code>~/Music/FP-30X Studio/takes/2026-08-19-a.fp30</code>, segments 3 and 4 ·
+self-contained, no network, no server.</footer>
+</div>
