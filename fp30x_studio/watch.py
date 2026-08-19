@@ -94,7 +94,11 @@ def light(s: dict) -> tuple[str, str, int]:
     if s["defects"]:
         return RED, f"DEFECTS {s['defects']}", 2
     if s["quiet_s"] > RED_S:
-        return RED, f"SILENT {s['quiet_s'] / 60:.1f} min -- check Auto Off", 2
+        # Deliberately does not name a cause. Nothing observable here separates
+        # "nobody is playing" from "the instrument powered itself off", since
+        # the Bluetooth pairing outlives the piano and CoreMIDI keeps
+        # enumerating it either way. Report the silence; let him say why.
+        return RED, f"no data for {s['quiet_s'] / 60:.1f} min", 2
     if s["quiet_s"] > AMBER_S:
         return AMBER, f"quiet {s['quiet_s']:.0f}s", 1
     return GREEN, "receiving", 0
