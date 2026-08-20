@@ -758,7 +758,7 @@ def render(al: Alignment, seg_a: Segment, seg_b: Segment, st) -> str:
 <style>{CSS}</style>
 <div class="wrap">
 <h1>Rubato as a warp</h1>
-<p class="sub">Chopin, Nocturne in F minor, Op. 55 No. 1 — your false start against the
+<p class="sub">Chopin, Nocturne in F minor, Op. 55 No. 1 — a false start against the
 opening of the complete performance, 19 August 2026.</p>
 
 <div class="hero">
@@ -773,10 +773,10 @@ opening of the complete performance, 19 August 2026.</p>
 </div>
 
 <div class="card">
-<p><b>The finding.</b> Locally your tempo swings by a factor of two — from
+<p><b>The finding.</b> Locally the tempo swings by a factor of two — from
 {min(slope):.2f}× to {max(slope):.2f}× of uniform. Globally the two performances sit
-<b>{fr:.2f} degrees apart</b> on a scale where orthogonal is ninety. You do not play
-it the same way twice in any local sense, and you play it almost identically in the
+<b>{fr:.2f} degrees apart</b> on a scale where orthogonal is ninety. The piece is not played
+the same way twice in any local sense, and it is played almost identically in the
 global one. The rubato is not noise; it is reproducible structure.</p>
 </div>
 

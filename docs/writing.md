@@ -22,12 +22,17 @@ that person as "you" 97 times.
 sentence needs a specific human to make sense, it belongs in a commit message or a
 notebook, not in the source.
 
-**Check.**
+**Check.** Third person about a specific human must be empty:
 
-    git grep -nIw -e he -e his -e him -e she -e her -e you -e your -- '*.py'
+    git grep -nIw -e he -e his -e him -e she -e her -- '*.py'
 
-Expected output is empty. Second person is fine in `README.md`, which addresses its
-reader on purpose.
+Second person is allowed, but only when it addresses whoever is reading or calling:
+UI copy, CLI help, a docstring telling a caller when to call. It is a defect when it
+addresses the one person the agent was talking to. The generated analysis pages had
+that form until 2026-08-20 -- "your false start", "how hard you struck a key" -- and
+now say "a false start" and "how hard a key was struck". Review, do not automate:
+
+    git grep -nIw -e you -e your -- '*.py'
 
 ## Length has to be earned, not budgeted
 

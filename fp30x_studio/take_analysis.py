@@ -219,8 +219,8 @@ class VelocityChannels:
         Binned at ``bins`` levels per axis, which is coarse enough that 804
         notes populate the joint table.  The maximum is
         ``min(H(strike), H(release))`` at the same binning, so the ratio is
-        interpretable as "how much of one channel the other one already tells
-        you".
+        interpretable as "how much of one channel the other one already
+        determines".
         """
         edges = np.linspace(0, 128, bins + 1)
         joint, _, _ = np.histogram2d(self.strike, self.release, bins=[edges, edges])
@@ -1281,7 +1281,7 @@ def build_page(a: TakeAnalysis, out: Path, figures: dict[str, Path],
     # -- 1. the object -----------------------------------------------------
     T.append('<h2 id="object"><span class="num">1</span>The object</h2>')
     T.append(
-        '<p class="lede">The representation is the one you specified: a note is '
+        '<p class="lede">The representation is the one specified for this project: a note is '
         'a scaled indicator on a closed interval, a key is a finite sum of them '
         'on pairwise disjoint intervals, and the performance is the direct sum '
         'over the 88 keys.</p>'
@@ -1440,7 +1440,7 @@ def build_page(a: TakeAnalysis, out: Path, figures: dict[str, Path],
     )
 
     # -- 3. velocity -------------------------------------------------------
-    T.append('<h2 id="velocity"><span class="num">3</span>The channel you are '
+    T.append('<h2 id="velocity"><span class="num">3</span>The channel the player is '
              'not using is the one carrying the most</h2>')
     T.append(
         '<p class="lede">The FP-30X sends two velocity bytes per note: one on the '
@@ -1471,12 +1471,12 @@ def build_page(a: TakeAnalysis, out: Path, figures: dict[str, Path],
     T.append(_fig(
         figures["velocity"],
         '<b>Left:</b> the two marginals. The strike byte is roughly symmetric '
-        f'about {v.strike.mean():.0f} and never exceeds {v.strike.max():.0f} — you '
+        f'about {v.strike.mean():.0f} and never exceeds {v.strike.max():.0f} — the '
         'used four fifths of the dynamic range the instrument offers. The release '
         f'byte is skewed high, sits at {v.release.mean():.0f} on average, and uses '
         'the whole byte. <b>Middle:</b> the joint distribution, on a single-hue '
-        'count ramp. The mass is a blob, not a ridge: knowing how hard you struck '
-        f'a key tells you {mi:.3f} bits about how you let it up, out of the '
+        'count ramp. The mass is a blob, not a ridge: knowing how hard a key was struck '
+        f'says {mi:.3f} bits about how it was let up, out of the '
         f'{mi_max:.2f} bits available. <b>Right:</b> release velocity against '
         'hold time, log-scaled, with a 61-note running mean. Flat until about a '
         'second, then falling — long held notes come up more gently, and that is '
@@ -1494,7 +1494,7 @@ def build_page(a: TakeAnalysis, out: Path, figures: dict[str, Path],
         f'{v.entropy(v.release) - v.entropy(v.strike):+.2f} bits more entropy than '
         'the strike byte, and its variation is essentially independent of the '
         'strike, of the pitch, and (below a second) of the duration. The '
-        'instrument is measuring a gesture at higher resolution than the one you '
+        'instrument is measuring a gesture at higher resolution than the one the player '
         'are consciously shaping, and then discarding it.</p>'
         + ('<p>The byte is a real measurement, not a constant and not noise: on '
            f'the control take <span class="mono">{control.path.name}</span>, where '
@@ -1504,10 +1504,10 @@ def build_page(a: TakeAnalysis, out: Path, figures: dict[str, Path],
            'It tracks key-return speed, over the full byte, in both directions.</p>'
            if control is not None else '')
         + '<p>Two readings, and this take cannot separate them. Either the release '
-        'is a real expressive channel you already articulate unconsciously — in '
+        'is a real expressive channel already articulated unconsciously — in '
         'which case a synthesis path that honours it has something to work with — '
         'or it is uncontrolled noise from a hand leaving a key that no longer '
-        'matters, in which case its high entropy is precisely because you are not '
+        'matters, in which case its high entropy is precisely because it is not '
         'attending to it. The discriminating experiment is a take played with the '
         'pedal up, and it has not been done.</p></div>'
     )
@@ -1523,12 +1523,12 @@ def build_page(a: TakeAnalysis, out: Path, figures: dict[str, Path],
         'in §2 says where that stops being true: the index of dispersion is '
         f'{a.fano["fano"][a.fano["width"] == 0.1][0]:.2f} at a 100 ms window and '
         f'{a.fano["fano"][a.fano["width"] == 5.0][0]:.2f} at 5 s. Below a quarter '
-        'of a second you place notes as if at random; above a second you clump '
+        'of a second notes land as if at random; above a second they clump '
         'them, which is what a phrase is.</p>'
         f'<p>Note durations are quantised to the same 5 ms lattice as everything '
         f'else ({int((durations_ms % 5 != 0).sum())} of {len(durations_ms)} '
         f'exceptions) and bottom out at exactly '
-        f'{durations_ms.min():.0f} ms — you have no note shorter than one tenth of '
+        f'{durations_ms.min():.0f} ms — no note is shorter than one tenth of '
         'a second, and the median is '
         f'{np.median(durations_ms):.0f} ms against a longest of '
         f'{durations_ms.max() / 1000:.2f} s.</p>')
@@ -1703,7 +1703,7 @@ def _write_html(out: Path, body: str, katex_css: str, katex_js: str,
 <h1>One take, as an $\\mathbb{{R}}^{{88}}$-valued step function</h1>
 <p class="sub">{a.actuator.n_strikes} strikes, {a.span:.0f} seconds, zero dropped
 packets — the first capture in this project whose timing means anything. What the
-indicator-function model actually says about how you played, and where the model
+indicator-function model actually says about the playing, and where the model
 and the hardware each run out.</p>
 <p class="meta"><code>{html.escape(a.path.name)}</code> · {html.escape(started)} ·
 {a.capture.header.get('source', '')} · analysed by
