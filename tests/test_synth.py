@@ -129,7 +129,7 @@ def test_rolloff_steepens_with_pitch():
 
 def test_damper_leaks_at_full_pedal_and_has_an_escapement():
     """Two defects the old linear map had. It reached exactly zero at cc64=127
-    -- and cc64 was 127 for ~90% of his playing time, so the damper was not
+    -- and cc64 was 127 for ~90% of the playing time, so the damper was not
     weak then, it was off -- and it had no escapement, when the mechanism has a
     knee partway down the travel."""
     d0 = model.damper_contact(0)
@@ -189,7 +189,7 @@ def test_release_velocity_changes_how_much_sound_survives_the_release(preset_nam
 
 def test_pedal_down_almost_but_not_entirely_defeats_the_damper():
     """It used to be *entirely*, and that was the defect. cc64 sat at 127 for
-    86.6-91.4% of the playing time on his takes, so a damper that switches off
+    86.6-91.4% of the playing time on real takes, so a damper that switches off
     at the top of the travel is switched off for almost the whole piece and
     every pedalled note runs to the model's tail limit. Felt leaks; the residual
     is small but it is not zero."""
@@ -244,7 +244,7 @@ def test_the_damper_takes_the_top_of_the_spectrum_first():
 
 
 def test_a_brief_pedal_lift_bites_even_though_it_lasts_15_ms():
-    """769 of his pedal excursions were 15 ms median, 30 ms maximum -- the
+    """769 pedal excursions were 15 ms median, 30 ms maximum -- the
     FP-30X never reports a sustained intermediate position. Under a pure
     dwell integral a 15 ms landing contributes nothing; physically it takes
     real energy out. The contact term is what makes it count."""

@@ -357,7 +357,7 @@ def damper_contact(cc64: float, engage: float = 0.55, knee: float = 0.25,
       it is not touching are still coupled through the bridge. ``leak`` is the
       residual contact at full pedal. It matters far more than its size
       suggests, because cc64 sat at 127 for 86.6-91.4% of the playing time on
-      his own takes: with ``leak = 0`` the damper is not weak during that time,
+      real takes: with ``leak = 0`` the damper is not weak during that time,
       it is *switched off*, and every pedalled note rings to the model's tail
       limit instead of dying.
 

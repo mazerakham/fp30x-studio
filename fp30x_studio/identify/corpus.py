@@ -12,7 +12,7 @@ Two corpora ship here:
 ``STUB`` -- themes entered by hand, each with its provenance in
 ``Theme.source``. Some are common-practice incipits entered from memory of the
 score; the rest are *derived from Jake's own takes*, and say so. A derived theme
-is honest evidence of what he played, and dishonest evidence of what the piece
+is honest evidence of what was played, and dishonest evidence of what the piece
 is, so its ``source`` records which take and which passage it came from.
 
 The real corpus, when it lands at :mod:`fp30x_studio.idcorpus`, is picked up by
@@ -210,7 +210,7 @@ STUB = ListCorpus([
     # -- negative controls: real music, honestly unlabelled ----------------
     # The other three pieces in the 44-minute session take. They are here to
     # make the vote a real vote -- a matcher that cannot tell the Chopin from
-    # the piece he played twenty minutes earlier is not a matcher.
+    # a piece played twenty minutes earlier is not a matcher.
     _d("session-2026-08-17-seg0", "", "Unidentified (session take, from 0:00)",
        (67, 66, 65, 70, 69, 70, 72, 71, 70, 74, 73, 74, 77, 73, 74, 69, 70,
         67, 66, 65, 77, 65),

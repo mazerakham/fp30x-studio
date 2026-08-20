@@ -100,7 +100,7 @@ def _pedal(st, t0: float, t1: float) -> list[tuple[float, int]]:
 
     Without the carried-in state a span that opens mid-pedal comes back
     staccato, because the damper is already off the strings and the page has no
-    way to know it. He holds this nocturne with his foot; the note-off is not
+    way to know it. This nocturne is held on the pedal; the note-off is not
     when the string stops, and the alignment is much less convincing dry.
     """
     events, before = [], None
@@ -353,7 +353,7 @@ margin-right:7px;vertical-align:-1px}
 
 JS = r"""
 /* ======================================================================
-   AUDIO. Everything here is synthesised from the note events of his own
+   AUDIO. Everything here is synthesised from the note events of the recorded
    take, inlined above -- nothing is fetched, and no audio file is embedded,
    so the page stays small and works with the network off.
 
@@ -361,7 +361,7 @@ JS = r"""
    its own decay, plus a short filtered noise burst for the hammer. The
    damper is applied at the note's *effective* release -- the note-off,
    pushed out to the moment the sustain pedal next comes up. Skip that and
-   a nocturne comes back staccato, because he holds the sound with his foot.
+   a nocturne comes back staccato, because the sound is held on the pedal.
    ====================================================================== */
 const D = JSON.parse(document.getElementById("warpdata").textContent);
 const clamp = (x,a,b) => x<a?a:x>b?b:x;
@@ -917,8 +917,8 @@ that deliberately: it is a smoothing parameter, and a warp that interpolated eve
 exactly would be a different, wigglier φ that explained nothing.</p>
 <p><b>The playback is a synthesiser, not a recording.</b> The FP-30X sends MIDI, not
 audio; there is no recording of these takes to embed. Timbre, dynamics and pedal are a
-model of a piano driven by his measured note events, and it is the <em>timing</em> that is
-his — the thing the whole page is about — not the sound.</p>
+model of a piano driven by the measured note events, and it is the <em>timing</em> that is
+the performance — the thing the whole page is about — not the sound.</p>
 </div>
 
 <footer>Generated 19 August 2026 by <code>python -m fp30x_studio.align</code> from

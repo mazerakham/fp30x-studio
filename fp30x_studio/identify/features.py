@@ -219,7 +219,7 @@ class Line:
         hold-back is one note in ordinary texture and the length of the run
         inside an ornament -- not a fixed lag. That matters: a fixed lag of two
         dozen events is six seconds of silence from the identifier at exactly
-        the moment he wants an answer.
+        the moment an answer is wanted.
         """
         limit = None if final else len(self._bp) - 1
         if limit is not None and limit <= 0:

@@ -23,7 +23,7 @@ alignment histogram           :class:`~.matcher.Votes`, one entry per
 
 Nothing in that table is recomputed from the top of the take. The work a tick
 does is proportional to the music played since the previous tick, not to the
-music played since he sat down, which is what keeps a 44-minute session as cheap
+music played since the session began, which is what keeps a 44-minute session as cheap
 in its 44th minute as in its first.
 
 **No model is consulted.** The identification is an inverted-index lookup and an
@@ -31,7 +31,7 @@ integer histogram. A language model may be handed the shortlist afterwards to
 say something about the piece; it is not in this path and must not be put in it.
 
 Segmenting: silence longer than :data:`~.features.SEGMENT_GAP_NS` ends a piece.
-Each segment gets its own votes, so the Chopin he plays after the Joplin is
+Each segment gets its own votes, so a Chopin played after a Joplin is
 identified on its own evidence and cannot inherit the Joplin's.
 """
 
@@ -73,7 +73,7 @@ class Verdict:
     corpus_size: int = 0
 
     def line_text(self, *, colour: bool = True) -> str:
-        """The single line the runner prints. Purple, because he asked."""
+        """The single line the runner prints."""
         body = (f"{self.label} "
                 f"[{self.notes} notes, {self.seconds:.0f} s, "
                 f"conf {self.confidence:.2f}]")

@@ -9,7 +9,7 @@ piles onto one diagonal.
 The same trick works here with two substitutions:
 
 * the local feature is a **melodic interval n-gram**, not a spectral peak pair,
-  so the hash is invariant under transposition -- he can play the Joplin in any
+  so the hash is invariant under transposition -- the Joplin can be played in any
   key and it hashes identically;
 * the offset is a **position in the line**, not a time in seconds, so the hash
   is invariant under tempo, rubato and stopping to fix a bar.
@@ -93,7 +93,7 @@ PRUNE_LAG = 240
 PRUNE_EVERY = 8192
 
 #: Confidence at or above which the runner speaks. Chosen so that a wrong
-#: answer costs more than a late one -- he is reading this out of one eye.
+#: answer costs more than a late one -- this is read out of the corner of an eye.
 MIN_CONFIDENCE = 0.80
 
 

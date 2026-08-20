@@ -22,7 +22,7 @@ from pathlib import Path
 TAKES = Path.home() / "Music" / "FP-30X Studio" / "takes"
 CAPTURE = Path(__file__).resolve().parent.parent / "native" / "build" / "fp30x-capture"
 
-#: Silence beyond this is amber: plausible if he is between pieces.
+#: Silence beyond this is amber: plausible between pieces.
 AMBER_S = 20.0
 #: Silence beyond this is red. The FP-30X's factory Auto Off is 30 minutes,
 #: and it powers down mid-session without announcing it.
@@ -97,7 +97,7 @@ def light(s: dict) -> tuple[str, str, int]:
         # Deliberately does not name a cause. Nothing observable here separates
         # "nobody is playing" from "the instrument powered itself off", since
         # the Bluetooth pairing outlives the piano and CoreMIDI keeps
-        # enumerating it either way. Report the silence; let him say why.
+        # enumerating it either way. Report the silence; the cause is a human call.
         return RED, f"no data for {s['quiet_s'] / 60:.1f} min", 2
     if s["quiet_s"] > AMBER_S:
         return AMBER, f"quiet {s['quiet_s']:.0f}s", 1

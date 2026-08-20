@@ -2,7 +2,7 @@
 
 The capture layer stays dumb on purpose: ``.fp30`` is one long append-only file
 with every packet the piano sent, silences included, because a silence is
-evidence too -- it is where he stopped. Deciding that a 40 s gap was the end of
+evidence too -- it is where the playing stopped. Deciding that a 40 s gap ended
 a piece is an interpretation, and interpretations belong here, in a projection
 over the raw, where they can be changed without touching what was recorded.
 
@@ -35,7 +35,7 @@ from . import core
 NAMES = "C C# D D# E F F# G G# A A# B".split()
 MAJSET = (0, 2, 4, 5, 7, 9, 11)
 #: Onset gap treated as a boundary. Long enough to survive a held fermata,
-#: short enough to catch him lifting his hands between pieces.
+#: short enough to catch hands lifting between pieces.
 GAP_S = 4.0
 
 
@@ -92,7 +92,7 @@ def texture(window) -> dict:
     key, inset = diatonic(window)
     return {
         "density": len(window) / span,
-        # A stop is him lifting his hands mid-passage: the signature of
+        # A stop is hands lifting mid-passage: the signature of
         # practising rather than playing through.
         "stops": sum(1 for g in gaps if g > 1.2),
         "range": max(pit) - min(pit),

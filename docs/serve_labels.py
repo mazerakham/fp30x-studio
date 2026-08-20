@@ -1,4 +1,4 @@
-"""Serve the labelling page on loopback, and take his answers back.
+"""Serve the labelling page on loopback, and take the listener's answers back.
 
     ~/workspace/audio/.venv/bin/python docs/serve_labels.py
 
@@ -13,8 +13,8 @@ two verbs a static server does not:
                           Rebuilt from disk, so a take still being recorded
                           shows up with whatever has landed so far.
     POST /label           one segment's verdict, appended to labels.json the
-                          moment he presses the key. Not on a final submit --
-                          he closes tabs.
+                          moment a key is pressed. Not on a final submit --
+                          tabs get closed.
 
 Cost. Building the theme index over the 70k-theme corpus takes ~7 s and
 replaying a 44-minute take through the identifier takes longer than a browser
@@ -66,7 +66,7 @@ FRAGMENT_NOTES = 12
 FRAGMENT_S = 3.0
 
 #: What Jake identified himself, before the identifier existed. These are not
-#: machine proposals and are marked as such on the page -- he is still asked to
+#: machine proposals and are marked as such on the page -- the listener is still asked to
 #: confirm them, because a label nobody re-checked is the thing this app exists
 #: to stop.
 HUMAN_LABELS = {
@@ -123,13 +123,13 @@ def _proposal(cand, take_name: str) -> dict | None:
     """The identifier's answer for one segment, gates and all.
 
     Reported whether or not it cleared :data:`MIN_CONFIDENCE`. A proposal below
-    the bar is exactly the case where his answer is worth most -- the runner
-    stayed silent, and only he knows whether it should have.
+    the bar is exactly the case where a human answer is worth most -- the runner
+    stayed silent, and only a listener knows whether it should have.
 
     ``circular`` is the one thing here the identifier does not tell you itself.
     Several corpus themes were derived *from these takes*, so a segment can
     match itself at confidence 0.999 and mean nothing. The page says so rather
-    than asking him to confirm a tautology.
+    than asking for confirmation of a tautology.
     """
     if cand is None:
         return None
@@ -139,7 +139,7 @@ def _proposal(cand, take_name: str) -> dict | None:
         "source_note": th.source,
         "circular": bool(th.source and stem in th.source),
         # carried into labels.json so a verdict stays traceable to the corpus
-        # that produced the proposal he was answering
+        # that produced the proposal being answered
         "corpus_themes": len(_index) if _index else 0,
         "source": "machine",
         "theme_id": th.id,
@@ -176,8 +176,8 @@ def build_take(path: Path) -> dict:
             "SELECT note, ns_on, ns_off, velocity_on FROM interval "
             "ORDER BY ns_on, note").fetchall()
         # The damper pedal, because without it a nocturne resynthesised from
-        # note-offs alone is staccato: he lifts the finger and holds the sound
-        # with his foot, so the note-off is not when the string stops.
+        # note-offs alone is staccato: the finger lifts and the sound is held
+        # with the pedal, so the note-off is not when the string stops.
         ped = store.db.execute(
             f"SELECT ns, d2 FROM message WHERE kind = 'control_change' "
             f"AND d1 = {SUSTAIN_CC} ORDER BY seq").fetchall()
@@ -249,7 +249,7 @@ def _cache_path(path: Path) -> Path:
 
     The corpus is being grown in another window; it went from 51,557 themes to
     122,848 while this was being written. A cache keyed only by the take would
-    then serve proposals from a corpus that no longer exists, and he would be
+    then serve proposals from a corpus that no longer exists, and the listener would be
     labelling an answer nobody could reproduce. The theme count is a coarse
     fingerprint, but it is the one that moves.
     """
@@ -333,7 +333,7 @@ def read_labels() -> dict:
         d.setdefault("labels", {})
         return d
     except Exception:
-        # never lose his answers to a half-written file
+        # never lose an answer to a half-written file
         bad = LABELS.with_suffix(".json.corrupt")
         LABELS.replace(bad)
         print(f"labels.json unreadable, moved to {bad}", flush=True)
@@ -365,7 +365,7 @@ PROV_MARK = "<!-- fp30x-labels -->"
 def append_provenance(doc: dict) -> None:
     """One dated line per labelling session, per the standing rule.
 
-    Rewritten rather than appended-per-answer: he will press dozens of keys and
+    Rewritten rather than appended-per-answer: dozens of keys get pressed and
     a line each would bury the file. The block is replaced in place, so the
     file carries the current count and the date it was last true.
     """
@@ -420,7 +420,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(read_labels())
         if path == "/rebuild":
             # Not forced: the cache is keyed by (size, mtime), so an unchanged
-            # take is reused and only the take he has grown since the last scan
+            # take is reused and only the take that has grown since the last scan
             # is replayed. Forcing would cost two minutes to learn nothing.
             force = "force=1" in self.path
             threading.Thread(target=_rebuild, kwargs={"force": force},

@@ -28,7 +28,7 @@ TARGET_PEAK = 0.945
 
 #: There is no compressor, limiter or soft knee. The chain from strike velocity
 #: to output sample is linear, so the 40 dB the velocity curve spreads between
-#: the softest and loudest strike he played survives to the file. A tanh knee
+#: the softest and loudest strike played survives to the file. A tanh knee
 #: was tried and thrown out: normalised the way it has to be, it lifted a
 #: passage 12 dB below peak to 4 dB below peak, which is to say it deleted most
 #: of the dynamics the velocity model exists to reproduce. Peak polyphony is 8
@@ -77,7 +77,7 @@ def damper_integral(score: Score, preset: Preset, end: float
     ``D`` is piecewise linear with a breakpoint at each of them.
 
     The sum is the *contact* term, and it exists because the dwell term alone
-    gets his playing qualitatively wrong. Measured on the takes: 769 excursions
+    gets real playing qualitatively wrong. Measured on the takes: 769 excursions
     into the middle of the pedal's travel in fifteen minutes, median duration
     15 ms, maximum 30 ms. The FP-30X never reports a sustained intermediate
     position -- every one of those is a sample caught while the foot was moving.

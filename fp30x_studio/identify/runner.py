@@ -1,15 +1,15 @@
-"""The thing he leaves running while he plays.
+"""The thing left running while the piano is played.
 
     $ python -m fp30x_studio.identify watch
 
 and then nothing. No progress bar, no "listening...", no running commentary of
-near-misses -- he is at the keyboard with the terminal in the corner of one eye,
-and every line printed before there is an answer is a line that pulls his eyes
+near-misses -- the player is at the keyboard with the terminal in the corner of one eye,
+and every line printed before there is an answer is a line that pulls their eyes
 off the music for nothing. When the arithmetic is sure, one purple line:
 
     \U0001f7e3 Scott Joplin, The Strenuous Life [26 notes, 6 s, conf 0.86]
 
-Then silence again until he starts something else. A silence longer than six
+Then silence again until something else starts. A silence longer than six
 seconds ends the piece, and the next one is judged on its own evidence.
 
 Subcommands
@@ -45,7 +45,7 @@ OFF = "\033[0m"
 
 
 def newest_take(directory: Path = TAKES) -> Path | None:
-    """The most recently modified ``.fp30``. The one he is recording into."""
+    """The most recently modified ``.fp30``. The one being recorded into."""
     try:
         takes = sorted(directory.glob("*.fp30"), key=lambda p: p.stat().st_mtime)
     except OSError:

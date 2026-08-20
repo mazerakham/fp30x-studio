@@ -60,7 +60,7 @@ UNFITTED = {
     "pedal_engage/pedal_knee/pedal_leak/pedal_contact_bite":
         "Half-damper geometry. The FP-30X reports cc64 but no recording of what "
         "it did to the sound exists on this machine. Set from the pedal "
-        "statistics of his own takes (769 mid-travel excursions, median 15 ms; "
+        "statistics of real takes (769 mid-travel excursions, median 15 ms; "
         "cc64 = 127 for 86.6-91.4% of playing time), not from audio.",
 }
 
