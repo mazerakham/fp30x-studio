@@ -199,13 +199,11 @@ STUB = ListCorpus([
        source="opening melody as measured from 2026-08-17-piece.fp30 "
               "(octave-doubled in the take; one octave kept here)"),
 
-    _d("chopin-nocturne-op62-1", "Chopin", "Nocturne in B major",
-       (64, 66, 73, 71, 70, 68, 66, 63, 75, 73, 71, 71, 70, 70, 68, 66, 63),
-       opus="62", number="1",
-       source=_DERIVED + "2026-08-17-session.fp30 at 24:31, first statement "
-                         "of the theme. NOT independent of that take: it will "
-                         "recognise that performance and is untested against "
-                         "any other."),
+    # chopin-nocturne-op62-1 removed 2026-08-20 (NEW-149). It was derived from
+    # 2026-08-17-session.fp30, so matching it was recall of a performance and
+    # not identification of a piece. The corpus now carries Op. 62 No. 1 from
+    # the Chopin Institute's scores (works 378 and 381, 729 and 845 notes), so
+    # the number this take produces is now measured against a score.
 
     # -- negative controls: real music, honestly unlabelled ----------------
     # The other three pieces in the 44-minute session take. They are here to
