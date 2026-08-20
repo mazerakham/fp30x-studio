@@ -17,10 +17,18 @@ out. The cut writes three files that answer three different questions:
 ``<name>.mid``    editable notes.
 ``<name>.wav``    something to actually listen to.
 
-The ``.fp30`` slice is a byte-faithful cut. The ``.mid`` is not: notes still
-held at the cut are released and the sustain pedal is lifted, because a MIDI
-file that ends mid-note renders as a stuck chord. That asymmetry is the point --
-the raw says what happened, the projection says what is playable.
+The ``.fp30`` slice is a byte-faithful cut. The ``.mid`` is not, and both
+differences are about the two edges:
+
+At the start it inherits controller state from everything before the window.
+The sustain pedal is held down across bar lines for tens of seconds, so a clip
+cut mid-phrase begins with the pedal already down; reading only the window
+renders the opening dry. At the end, notes still held are released and the
+pedal lifted, because a MIDI file ending mid-note renders as a stuck chord.
+
+The inherited state is written into the slice's trailer as ``clip_entry_cc``
+lines rather than injected into it, so the raw stays a cut and still says only
+what the piano sent.
 """
 from __future__ import annotations
 
@@ -159,6 +167,22 @@ def cmd_clip(args) -> int:
     mid_out = out_dir / f"{stem}.mid"
     wav_out = out_dir / f"{stem}.wav"
 
+    # Controller state is not in the window, it is in everything before it.
+    # A clip that starts mid-phrase inherits whatever the pedal was doing, and
+    # dropping that renders the opening dry -- the sustain pedal is held down
+    # across bar lines for tens of seconds at a time.
+    entry: dict[int, int] = {}
+    with open(path) as src:
+        for line in src:
+            if line.startswith("#"):
+                continue
+            parts = line.split()
+            ns = int(parts[0])
+            if ns >= ns_from:
+                break
+            if len(parts) >= 4 and (int(parts[1], 16) & 0xF0) == 0xB0:
+                entry[int(parts[2], 16)] = int(parts[3], 16)
+
     # --- the raw slice: header verbatim, absolute timestamps untouched ---
     kept = 0
     with open(path) as src, open(raw_out, "w") as dst:
@@ -173,6 +197,9 @@ def cmd_clip(args) -> int:
         dst.write(f"# clipped_from {path.name}\n")
         dst.write(f"# clip_window_ns {ns_from} {ns_to}\n")
         dst.write(f"# clip_window_rel {t_from:.3f} {t_to:.3f}\n")
+        for ctrl, val in sorted(entry.items()):
+            # not part of the cut; recorded so the slice is self-describing
+            dst.write(f"# clip_entry_cc {ctrl} {val}\n")
         dst.write("# end clip\n")
 
     # --- the playable projection ---
@@ -182,8 +209,10 @@ def cmd_clip(args) -> int:
     mid.tracks.append(track)
     tpb, tempo = mid.ticks_per_beat, 500000
     held: set[int] = set()
-    pedal_down = False
     prev = None
+    for ctrl, val in sorted(entry.items()):
+        track.append(mido.Message("control_change", control=ctrl, value=val, time=0))
+    pedal_down = entry.get(64, 0) >= 64
     with open(path) as src:
         for line in src:
             if line.startswith("#"):
