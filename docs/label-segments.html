@@ -196,7 +196,7 @@ form#fix .wide{flex:2 1 260px;}
 "use strict";
 /* ======================================================================
    The state. `segs` is the queue as the server built it; `labels` is what
-   he has already said, loaded on start so closing the tab costs nothing.
+   was already answered, loaded on start so closing the tab costs nothing.
    ====================================================================== */
 const S = {data:null, segs:[], view:[], cur:0, labels:{}, ready:false};
 const $ = s => document.querySelector(s);
@@ -211,18 +211,18 @@ const esc = s => String(s==null?"":s).replace(/[&<>"]/g,
 /* ======================================================================
    AUDIO — a from-scratch string voice, same shape as the timbre workbench's.
    Nothing is fetched: every sound on this page is computed from the note
-   events of his own take, so the page stays small and works with the network
+   events of the take itself, so the page stays small and works with the network
    off. Partial n runs at n*f0*sqrt(1+B n^2) and decays on its own time
    constant; the damper is applied at the note's *effective* release, which is
    the note-off extended by however long the sustain pedal stayed down. Skip
-   that last part and a nocturne comes back staccato, because he holds the
-   sound with his foot and the note-off is not when the string stops.
+   that last part and a nocturne comes back staccato, because the sound is
+   held on the pedal and the note-off is not when the string stops.
    ====================================================================== */
 const AU = {ctx:null,bus:null,master:null,analyser:null,bins:null,
             live:[],playing:false,t0:0,off:0,idx:0,seg:null,timer:null,osc:0};
 /* The scheduling horizon is deliberately wider than it needs to be. Chrome
    throttles `setInterval` in a tab that is not visible -- down to about once a
-   second -- and a lookahead shorter than that turns the moment he switches
+   second -- and a lookahead shorter than that turns the moment of switching
    tabs into a stutter. Everything inside the horizon is already scheduled on
    the audio clock, which is sample-accurate and is not throttled, so a slow
    pump costs nothing. */
@@ -239,6 +239,9 @@ function initAudio(){
   AU.analyser = AU.ctx.createAnalyser();
   AU.analyser.fftSize = 2048;
   AU.bins = new Float32Array(AU.analyser.fftSize);
+  AU.lim = lim;
+  AU.sfbus = AU.ctx.createGain(); AU.sfbus.gain.value = 0.85;
+  AU.sfbus.connect(lim);
   AU.bus.connect(lim); lim.connect(AU.master); AU.master.connect(AU.analyser);
   AU.analyser.connect(AU.ctx.destination);
   return AU.ctx;
@@ -329,9 +332,30 @@ function prepare(seg){
   seg._prepped = true;
 }
 
+/* ----------------------------------------------------------------------
+   THE SOUNDFONT PATH. The oscillator bank below is a sine stack with a
+   noise transient; it is legible but it is not a piano, and naming a piece
+   by ear is hard enough without hearing it through a synthesiser. The
+   server renders each segment through fluidsynth and the same soundfont
+   the clips use, and this plays that. If the fetch or the decode fails --
+   no fluidsynth, no soundfont, an old take -- playback silently falls back
+   to the oscillators, so the page never loses the ability to make sound.
+   ---------------------------------------------------------------------- */
+function segAudio(seg){
+  if(seg._buf !== undefined) return Promise.resolve(seg._buf);
+  if(seg._bufP) return seg._bufP;
+  seg._bufP = fetch("/audio?key=" + encodeURIComponent(seg.key))
+    .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status)))
+    .then(b => AU.ctx.decodeAudioData(b))
+    .then(buf => { seg._buf = buf; return buf; })
+    .catch(() => { seg._buf = null; return null; });
+  return seg._bufP;
+}
+
 function stopAudio(){
   if(!AU.ctx) return;
   const now = AU.ctx.currentTime;
+  if(AU.src){ try{ AU.src.stop(now); }catch(e){} AU.src = null; }
   for(const v of AU.live){
     try{ v.vg.gain.cancelScheduledValues(now);
          v.vg.gain.setTargetAtTime(0, now, 0.015);
@@ -350,10 +374,35 @@ function playFrom(offSec){
   stopAudio();
   AU.seg = seg;
   AU.off = clamp(offSec, 0, seg._span);
+  AU.playing = true;
+  paintTransport();
+  segAudio(seg).then(buf => {
+    if(!AU.playing || AU.seg !== seg) return;      // stopped or moved on while loading
+    if(buf) return playBuffer(seg, buf);
+    playOscillators(seg);
+  });
+}
+
+/* The rendered take. One node, started at an offset -- the scrub bar and the
+   playhead arithmetic are unchanged, because both are expressed against
+   AU.t0 and AU.off rather than against the scheduler. */
+function playBuffer(seg, buf){
+  AU.t0 = AU.ctx.currentTime + 0.04;
+  const src = AU.ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(AU.sfbus);
+  src.onended = () => { if(AU.src === src) stopAudio(); };
+  src.start(AU.t0, Math.min(AU.off, Math.max(0, buf.duration - 0.02)));
+  AU.src = src;
+  AU.timer = setInterval(() => {
+    if(playHead() > seg._span + 0.5) stopAudio(); else paintTransport();
+  }, TICK);
+}
+
+function playOscillators(seg){
   AU.t0 = AU.ctx.currentTime + 0.08;
   AU.idx = 0;
   while(AU.idx < seg.events.length && seg.events[AU.idx][0]/1000 < AU.off) AU.idx++;
-  AU.playing = true;
   AU.timer = setInterval(pump, TICK);
   pump();
 }
@@ -376,7 +425,7 @@ function pump(){
 const playHead = () => AU.playing ? (AU.ctx.currentTime - AU.t0 + AU.off) : AU.off;
 
 /* ======================================================================
-   PIANO ROLL. He reads these faster than he can listen to them, so every
+   PIANO ROLL. These are read faster than they can be listened to, so every
    row in the queue carries a thumbnail and the open segment carries a full
    one with a playhead. Click anywhere on it to play from there.
    ====================================================================== */
@@ -528,8 +577,8 @@ function renderDetail(){
         (claim.number ? ' No. '+esc(claim.number) : '')+'</div>' : '')+
     '<div class="badges">'+badges.join("")+'</div>'+
     (p ? '<table class="ev">'+
-      /* When Jake named it himself the headline is his, so the machine's
-         answer gets its own row rather than borrowing his label's authority
+      /* A human label owns the headline, so the machine's answer gets its
+         own row rather than borrowing that label's authority
          for its confidence figure. */
       (s.human ? tr("identifier said", esc(p.label)) : "")+
       tr("confidence", p.confidence.toFixed(3)+"  (bar "+S.data.min_confidence+")")+
@@ -541,7 +590,7 @@ function renderDetail(){
   '</div>'+
 
   '<div class="card">'+
-    '<span class="lab">listen — synthesised in this page from this segment’s own notes</span>'+
+    '<span class="lab">listen — this segment’s own notes, through the soundfont</span>'+
     '<canvas id="roll"></canvas>'+
     '<div class="transport">'+
       '<button class="b" id="play">▶ Play</button>'+
@@ -638,7 +687,7 @@ function paintAnswer(){
 
 /* ======================================================================
    WRITE-BACK. Every press is a POST. Nothing is batched, nothing waits for
-   a submit button, because he closes tabs.
+   a submit button, because tabs get closed.
    ====================================================================== */
 async function answer(verdict, correction){
   const s = cur();
@@ -708,7 +757,7 @@ function frame(){
 function paintTransport(){ /* the rAF loop does the work; this forces one now */ }
 
 /* ======================================================================
-   KEYBOARD. He goes through dozens of these; reaching for the mouse each
+   KEYBOARD. Dozens of these get answered in a run; reaching for the mouse each
    time is the thing that makes it feel inhuman.
    ====================================================================== */
 document.addEventListener("keydown", e=>{

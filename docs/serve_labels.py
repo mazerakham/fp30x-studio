@@ -40,6 +40,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from fp30x_studio import core  # noqa: E402
 from fp30x_studio.identify.corpus import load_corpus  # noqa: E402
 from fp30x_studio.identify.identifier import replay_all  # noqa: E402
 from fp30x_studio.identify.matcher import (MIN_CONFIDENCE, ThemeIndex,  # noqa: E402
@@ -398,6 +399,107 @@ def append_provenance(doc: dict) -> None:
     PROVENANCE.write_text(text)
 
 
+# ----------------------------------------------------------------- audio ----
+
+AUDIO_CACHE = CACHE / "audio"
+
+
+def render_segment(seg: dict) -> Path:
+    """One segment as a WAV, through the soundfont rather than the browser.
+
+    The page can synthesise a segment itself from oscillators, and that engine
+    stays as the fallback, but it is a sine bank with a noise transient and it
+    sounds like one. Judging whether a proposal is right is a listening task,
+    and a listener asked to name a piece should not first have to see past the
+    instrument.
+
+    Two things this has to get right, both of them edges:
+
+    Pedal that went down before the segment did. ``build_take`` already carries
+    CC64 from two seconds ahead of the start, which arrives here as events at
+    negative times. Those are not played; the last of them is applied as the
+    pedal's opening value. This is what a sequencer calls chasing, and without
+    it a segment cut mid-phrase opens dry.
+
+    Notes still sounding at the end. They are released, and the pedal with
+    them, because a MIDI file that stops mid-note renders as a stuck chord.
+    """
+    import mido
+
+    AUDIO_CACHE.mkdir(parents=True, exist_ok=True)
+    stem = seg["key"].replace("/", "_").replace("#", "-")
+    out = AUDIO_CACHE / f"{stem}.m4a"
+    if out.exists():
+        return out
+    wav = AUDIO_CACHE / f"{stem}.wav"
+
+    mid = mido.MidiFile()
+    track = mido.MidiTrack()
+    mid.tracks.append(track)
+    tpb, tempo = mid.ticks_per_beat, 500000
+    to_tick = lambda ms: int(mido.second2tick(ms / 1000.0, tpb, tempo))
+
+    # (time_ms, kind, a, b) -- one flat, sorted stream, so deltas are trivial
+    ev: list[tuple[float, int, int, int]] = []
+    chase = 0
+    for ms, val in seg.get("pedal", []):
+        if ms < 0:
+            chase = val          # before the segment: state, not an event
+        else:
+            ev.append((ms, 2, SUSTAIN_CC, val))
+    held_to: dict[int, float] = {}
+    for ms, note, vel, dur in seg["events"]:
+        ev.append((ms, 1, note, vel))
+        off = ms + max(dur, 30.0)
+        ev.append((off, 0, note, 64))
+        held_to[note] = max(held_to.get(note, 0.0), off)
+    ev.sort(key=lambda e: (e[0], e[1]))       # note-offs before note-ons at a tie
+
+    track.append(mido.Message("control_change", control=SUSTAIN_CC,
+                              value=chase, time=0))
+    prev = 0.0
+    for ms, kind, a, b in ev:
+        delta = to_tick(ms) - to_tick(prev)
+        prev = ms
+        if kind == 1:
+            track.append(mido.Message("note_on", note=a, velocity=b, time=delta))
+        elif kind == 0:
+            track.append(mido.Message("note_off", note=a, velocity=b, time=delta))
+        else:
+            track.append(mido.Message("control_change", control=a, value=b,
+                                      time=delta))
+    track.append(mido.Message("control_change", control=SUSTAIN_CC, value=0,
+                              time=to_tick(2000)))
+
+    tmp = wav.with_suffix(".mid")
+    mid.save(tmp)
+    try:
+        core.render(tmp, wav, core.soundfont_path())
+        # Segments run to fifteen minutes, and 44.1 kHz stereo PCM of that is
+        # 150 MB across a fetch the page blocks on. AAC at 96 kbps is about a
+        # twentieth of it and Chrome decodes it natively, so the whole segment
+        # stays scrubbable instead of being truncated to a preview.
+        subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", "-b", "96000",
+                        str(wav), str(out)], check=True, capture_output=True)
+    finally:
+        tmp.unlink(missing_ok=True)
+        wav.unlink(missing_ok=True)
+    return out
+
+
+def _segment_by_key(key: str) -> dict | None:
+    if _state["status"] != "ready":
+        return None
+    for take in _state["payload"].get("takes", []):
+        for seg in take.get("segments", []):
+            if seg["key"] == key:
+                return seg
+    for seg in _state["payload"].get("segments", []):
+        if seg["key"] == key:
+            return seg
+    return None
+
+
 # ---------------------------------------------------------------- server ----
 
 class Handler(SimpleHTTPRequestHandler):
@@ -426,6 +528,26 @@ class Handler(SimpleHTTPRequestHandler):
             threading.Thread(target=_rebuild, kwargs={"force": force},
                              daemon=True).start()
             return self._json({"status": "rebuilding", "force": force})
+        if path == "/audio":
+            from urllib.parse import parse_qs, urlparse
+            key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]
+            seg = _segment_by_key(key)
+            if seg is None:
+                return self._json({"error": f"no segment {key!r}"}, 404)
+            if not core.have_fluidsynth():
+                return self._json({"error": "fluidsynth not installed"}, 503)
+            try:
+                wav = render_segment(seg)
+            except Exception as exc:                      # fall back, never fail
+                return self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+            body = wav.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/mp4")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "max-age=86400")
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == "/":
             self.path = "/" + PAGE
         return super().do_GET()
