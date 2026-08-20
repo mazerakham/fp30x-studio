@@ -199,7 +199,7 @@ STUB = ListCorpus([
        source="opening melody as measured from 2026-08-17-piece.fp30 "
               "(octave-doubled in the take; one octave kept here)"),
 
-    # chopin-nocturne-op62-1 removed 2026-08-20 (NEW-149). It was derived from
+    # chopin-nocturne-op62-1 removed 2026-08-20 (JPA-149). It was derived from
     # 2026-08-17-session.fp30, so matching it was recall of a performance and
     # not identification of a piece. The corpus now carries Op. 62 No. 1 from
     # the Chopin Institute's scores (works 378 and 381, 729 and 845 notes), so
