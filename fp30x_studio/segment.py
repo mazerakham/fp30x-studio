@@ -47,6 +47,48 @@ MAJSET = (0, 2, 4, 5, 7, 9, 11)
 GAP_S = 4.0
 
 
+#: Seconds of silence appended after the last event so a pedalled final chord
+#: can decay instead of being cut off. Rendering stops at the end of the file.
+TAIL_S = 9.0
+
+
+def close_tail(track, mido, held, pedal_down, tpb, tempo, tail_s=TAIL_S):
+    """End the file without damping what the performance left ringing.
+
+    An earlier version released every sounding note and forced CC64 to 0 here.
+    That rule exists for a real reason -- a MIDI file that stops mid-note
+    renders as a stuck chord -- but applied to an *ending* it is destructive.
+    The 2026-08-21 nocturne finishes with the pedal at 127 and never lifts it;
+    Jake heard the last chord damped "wayyy too early", and he was right. The
+    recording says the pedal stayed down.
+
+    So the rule now depends on why the file is ending:
+
+    * **Pedal down.** The performer is holding the sound. Leave the notes and
+      the pedal exactly as the recording left them, append `tail_s` of silence
+      so the synthesiser renders the decay, and only then release. Nothing is
+      added that was not played; the tail is room for what was.
+    * **Pedal up.** Nothing is being sustained deliberately, so release the
+      held notes at once, as before, and append a short tail for the natural
+      note decay.
+
+    Either way this is an edit, not a recovery, and it belongs in PROVENANCE.
+    """
+    silence = mido.Message("control_change", control=64,
+                           value=(127 if pedal_down else 0),
+                           time=int(mido.second2tick(tail_s, tpb, tempo)))
+    if not pedal_down:
+        for n in sorted(held):
+            track.append(mido.Message("note_off", note=n, velocity=64, time=0))
+        track.append(silence)
+    else:
+        # hold everything, let it ring, then lift
+        track.append(silence)
+        for n in sorted(held):
+            track.append(mido.Message("note_off", note=n, velocity=64, time=0))
+        track.append(mido.Message("control_change", control=64, value=0, time=0))
+
+
 def mmss(s: float) -> str:
     return f"{int(s) // 60:02d}:{int(s) % 60:02d}"
 
@@ -241,11 +283,7 @@ def cmd_clip(args) -> int:
                     pedal_down = d2 >= 64
                 track.append(mido.Message("control_change", control=d1,
                                           value=d2, time=delta))
-    # The cut is arbitrary; the sound should not be. Release what is still down.
-    for n in sorted(held):
-        track.append(mido.Message("note_off", note=n, velocity=64, time=0))
-    if pedal_down:
-        track.append(mido.Message("control_change", control=64, value=0, time=0))
+    close_tail(track, mido, held, pedal_down, tpb, tempo, args.tail)
     mid.save(mid_out)
 
     core.render(mid_out, wav_out, core.soundfont_path())
@@ -280,6 +318,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--out", help="output directory (default: <takes>/clips)")
     sp.add_argument("--pad", type=float, default=0.5, help="seconds of padding each side")
     sp.add_argument("--no-play", action="store_true")
+    sp.add_argument("--tail", type=float, default=TAIL_S,
+                    help="seconds of silence appended so a pedalled ending can decay")
     sp.set_defaults(func=cmd_clip)
     return ap
 
