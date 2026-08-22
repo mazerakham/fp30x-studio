@@ -33,6 +33,7 @@ from collections import Counter
 from pathlib import Path
 
 from . import core
+from .rawcapture import split_messages
 from .pipeline.cli import resolve
 
 SUSTAIN = 64
@@ -83,7 +84,9 @@ def _raw_messages(path: Path, ns_from=None, ns_to=None):
             continue
         if ns_to is not None and ns > ns_to:
             break
-        yield ns, bytes(int(b, 16) for b in parts[1:])
+        # A packet may hold more than one MIDI message; yield each of them.
+        for msg in split_messages(bytes(int(b, 16) for b in parts[1:])):
+            yield ns, msg
 
 
 def build(head_path, head_from_ns, seam_ns, body_path, out_mid: Path):
@@ -141,17 +144,33 @@ def build(head_path, head_from_ns, seam_ns, body_path, out_mid: Path):
         held.clear()
 
     # ---- body, from its first message ----
+    #
+    # DO NOT "FIX" THIS TO ANCHOR ON THE FIRST NOTE-ON without re-listening.
+    # Two offsets here cancel, and an audit on 2026-08-21 found both:
+    #
+    #   * the body is anchored to its first raw *message*, which is an orphan
+    #     note-off, so its first note-on lands 0.51 s after the nominal seam;
+    #   * the vote lands mid-chord -- head note 123 is the third of four notes
+    #     spread over 40 ms -- so the cut is 0.25-0.6 s early.
+    #
+    # Net, the body's music begins at 45.63 s, against two independent
+    # estimates of the true anchor at 45.33 s and 45.70 s. That is inside the
+    # rubato spread between the two performances, and Jake reports the seam
+    # undetectable. Correcting either offset alone moves it out of that window.
     b0 = None
-    body_pedal = 0
     body_pedal_state = 0
     for ns, data in _raw_messages(body_path):
         if len(data) < 2:
             continue
         if b0 is None:
             b0 = ns
-            if body_pedal:
-                tr.append(mido.Message("control_change", control=SUSTAIN,
-                                       value=body_pedal, time=0))
+            # No opening chase is applied here on purpose. The body has no
+            # controller history to chase -- it is the start of its own file --
+            # and the musically correct value is the head's pedal at the seam,
+            # which is already in the stream because the seam no longer lifts
+            # it. An earlier `if body_pedal:` branch here was dead code: the
+            # variable was initialised to 0 and never assigned.
+            pass
         t = head_len + (ns - b0) / 1e9
         st, d1 = data[0] & 0xF0, data[1]
         d2 = data[2] if len(data) > 2 else 0

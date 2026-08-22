@@ -370,30 +370,41 @@ def test_the_joplin_is_identified_from_a_stream_prefix():
 
 
 @needs_takes
-def test_the_chopin_is_identified_from_its_segment_of_the_session():
-    """Segment four of the 44-minute take: Nocturne in B major, Op. 62 No. 1.
+def test_the_chopin_segment_is_not_identified_from_the_stub_corpus():
+    """The Chopin is *not* named, and that is the correct result.
 
-    The theme in the stub corpus was *derived from this take*, so this asserts
-    recall against the same performance, not against the piece. What it does
-    test independently is discrimination: the same take holds four other
-    pieces, all four are in the corpus, and each segment must find its own.
+    Until 2026-08-20 this asserted the opposite. The theme it matched had been
+    derived from this very take, so a pass measured recall of one performance
+    rather than identification of a piece -- data leakage, and the figure it
+    produced (35 notes) was quoted for weeks as though it meant something.
+
+    The stub is gone. The corpus now carries Op. 62 No. 1 from the Chopin
+    Institute's scores, 85 indexed windows, and against those the segment
+    produces no verdict at any length: the performance interpolates a note into
+    the theme, and the matcher votes on 3-grams of intervals, so one insertion
+    reframes every gram downstream.
+
+    Asserting the silence keeps the finding from being undone by accident.
     """
     verdicts, _ = replay_all(SESSION, STUB, chunk=2)
     by_segment = {v.segment: v for v in verdicts}
-    assert by_segment[3].theme_id == "chopin-nocturne-op62-1"
-    assert by_segment[3].opus == "62" and by_segment[3].number == "1"
-    assert by_segment[3].notes <= 60, f"needed {by_segment[3].notes} notes"
+    assert 3 not in by_segment, (
+        f"segment 3 was identified as {by_segment[3].theme_id!r} -- if a theme "
+        "derived from this take has re-entered the corpus, that is the bug")
 
 
 @needs_takes
 def test_every_piece_in_the_session_is_told_apart_from_every_other():
     verdicts, _ = replay_all(SESSION, STUB, chunk=2)
     got = {v.segment: v.theme_id for v in verdicts}
+    # Segment 3 is absent by design: its theme was removed as circular (see
+    # test_the_chopin_segment_is_not_identified_from_the_stub_corpus). The
+    # discrimination claim is unaffected -- what it tests is that no segment
+    # answers with another segment's theme.
     assert got == {
         0: "session-2026-08-17-seg0",
         1: "session-2026-08-17-seg1",
         2: "session-2026-08-17-seg2",
-        3: "chopin-nocturne-op62-1",
         4: "session-2026-08-17-seg4",
     }
 
@@ -475,12 +486,34 @@ def test_the_joplin_is_named_out_of_the_whole_corpus(real_index):
 
 @needs_corpus
 @needs_takes
-def test_the_chopin_nocturne_is_named_out_of_the_whole_corpus(real_index):
+def test_the_chopin_nocturne_is_not_named_even_against_the_real_corpus(real_index):
+    """Op. 62 No. 1 is in the corpus from scores, and still is not matched.
+
+    85 windows of it are indexed from the Chopin Institute's editions, so this
+    is not a coverage gap. The performance opens with an extra chord tone
+    against the score's line, and interval 3-grams do not survive an insertion:
+    5 of 13 carry through, which is under the confidence gate.
+
+    It does not fall silent, which is worse. It answers *wrongly*: the segment
+    comes back as Anonymous, "HOERT DIE LERCHE SIE SINGT", Op. 150, on 6 hits
+    at margin 0.333 -- the lowest margin any verdict in this take produces, and
+    still above the gate. So the failure mode here is a false positive, not a
+    refusal, and `test_removing_the_answer_from_the_corpus_produces_silence_
+    not_a_guess` does not generalise to a piece the matcher merely fails to
+    align with.
+
+    The honest headline number for this project is therefore the Joplin, whose
+    corpus entry came from a score. This test exists so that stays true.
+    """
     verdicts, _ = replay_all(SESSION, index=real_index, chunk=2)
-    v = {x.segment: x for x in verdicts}[3]
-    assert "Chopin" in v.composer or "Chopin" in v.work
-    assert "62" in (v.opus or "") or "Nocturne in B" in v.work
-    assert v.notes <= 80, f"needed {v.notes} notes"
+    v = {x.segment: x for x in verdicts}
+    if 3 in v:
+        assert "Chopin" not in (v[3].composer or ""), (
+            "the Chopin is being identified again -- check whether a theme "
+            "derived from this take has re-entered the corpus")
+        assert v[3].margin <= 0.4, (
+            f"the wrong answer {v[3].work!r} is now arriving at margin "
+            f"{v[3].margin} -- a confident false positive is a regression")
 
 
 @needs_corpus

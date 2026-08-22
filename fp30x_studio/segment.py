@@ -39,6 +39,7 @@ import sys
 from pathlib import Path
 
 from . import core
+from .rawcapture import split_messages
 
 NAMES = "C C# D D# E F F# G G# A A# B".split()
 MAJSET = (0, 2, 4, 5, 7, 9, 11)
@@ -222,8 +223,9 @@ def cmd_clip(args) -> int:
             ns = int(parts[0])
             if ns >= ns_from:
                 break
-            if len(parts) >= 4 and (int(parts[1], 16) & 0xF0) == 0xB0:
-                entry[int(parts[2], 16)] = int(parts[3], 16)
+            for msg in split_messages(bytes(int(b, 16) for b in parts[1:])):
+                if len(msg) >= 3 and (msg[0] & 0xF0) == 0xB0:
+                    entry[msg[1]] = msg[2]
 
     # --- the raw slice: header verbatim, absolute timestamps untouched ---
     kept = 0
@@ -263,26 +265,30 @@ def cmd_clip(args) -> int:
             ns = int(parts[0])
             if not (ns_from <= ns <= ns_to):
                 continue
-            data = bytes(int(b, 16) for b in parts[1:])
-            if len(data) < 2:
-                continue
-            status, d1 = data[0] & 0xF0, data[1]
-            d2 = data[2] if len(data) > 2 else 0
-            if prev is None:
+            # One CoreMIDI packet can carry several MIDI messages -- 4.5% of
+            # them do on a typical take, and 6.4% on a dense one. Reading only
+            # data[0:3] silently dropped 5-9% of every export; on the
+            # 2026-08-21 nocturne that was 135 notes of 1930.
+            for data in split_messages(bytes(int(b, 16) for b in parts[1:])):
+                if len(data) < 2:
+                    continue
+                status, d1 = data[0] & 0xF0, data[1]
+                d2 = data[2] if len(data) > 2 else 0
+                if prev is None:
+                    prev = ns
+                delta = int(mido.second2tick((ns - prev) / 1e9, tpb, tempo))
                 prev = ns
-            delta = int(mido.second2tick((ns - prev) / 1e9, tpb, tempo))
-            prev = ns
-            if status == 0x90 and d2 > 0:
-                held.add(d1)
-                track.append(mido.Message("note_on", note=d1, velocity=d2, time=delta))
-            elif status in (0x80, 0x90):
-                held.discard(d1)
-                track.append(mido.Message("note_off", note=d1, velocity=d2, time=delta))
-            elif status == 0xB0:
-                if d1 == 64:
-                    pedal_down = d2 >= 64
-                track.append(mido.Message("control_change", control=d1,
-                                          value=d2, time=delta))
+                if status == 0x90 and d2 > 0:
+                    held.add(d1)
+                    track.append(mido.Message("note_on", note=d1, velocity=d2, time=delta))
+                elif status in (0x80, 0x90):
+                    held.discard(d1)
+                    track.append(mido.Message("note_off", note=d1, velocity=d2, time=delta))
+                elif status == 0xB0:
+                    if d1 == 64:
+                        pedal_down = d2 >= 64
+                    track.append(mido.Message("control_change", control=d1,
+                                              value=d2, time=delta))
     close_tail(track, mido, held, pedal_down, tpb, tempo, args.tail)
     mid.save(mid_out)
 
