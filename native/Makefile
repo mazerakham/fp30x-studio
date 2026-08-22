@@ -7,7 +7,7 @@
 
 CC      ?= cc
 CFLAGS  ?= -O2 -Wall -Wextra -std=c11
-LDFLAGS ?= -framework CoreMIDI -framework CoreFoundation
+LDFLAGS ?= -framework CoreMIDI -framework CoreFoundation -framework IOKit
 
 BUILD := build
 BINS  := $(BUILD)/fp30x-capture $(BUILD)/fp30x-synth
