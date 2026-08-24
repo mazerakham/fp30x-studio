@@ -1165,6 +1165,107 @@ Everything above is cited except these.
 7. **§0.3(3)** — that he would rather have stable label targets than stable citations. The
    trade is real and he may want the other side of it.
 
+## 10. Timbre
+
+Added 2026-08-24. The 1.0-draft of this document did not mention timbre once, which was a
+hole rather than an omission: the format could describe *which notes were played* and not
+*what the result sounded like*, so two audibly different renderings of one clip were
+indistinguishable in the manifest.
+
+Timbre enters FPX as **two fields that must never be merged**, because they answer different
+questions and are owned by different objects.
+
+### 10.1 Performed timbre — a property of a window of capture
+
+**FPX-171 (MUST)** — Every clip in a manifest MUST carry `timbre.performed`, computed from
+the capture alone. It is a function of the note and controller stream and nothing else, so it
+is identical on every recomputation and survives any change of renderer.
+
+Implemented in `fp30x_studio/timbre.py:performed`. Fields, all with `schema_version`:
+
+| field | what it is | why it is here |
+| -- | -- | -- |
+| `velocity` | n, mean, sd, p10, p90 | dynamic level and dynamic *range*, separately |
+| `attack_rate_hz` | onsets per second | the difference between a chord and a run |
+| `legato_index` | share of onsets arriving while the previous note is still held | overlap made by the hand — not the pedal, which is CC64 and a different sound |
+| `duty_cycle` | mean note duration ÷ mean inter-onset interval | how far the touch sits between staccato and over-held |
+| `register_centroid`, `register_spread` | duration-weighted pitch mean and sd | where on the instrument the sound is |
+| `voicing_top_lead` | in chords (onsets within 30 ms), the top note's velocity minus the mean of the notes under it | "projecting the melody", as a number |
+| `dynamic_arc` | mean velocity of the second half minus the first | whether the passage grew or died |
+| `chords` | count of onset clusters within 30 ms | denominator for `voicing_top_lead` |
+| `pedal` | see FPX-172 | |
+
+**FPX-172 (MUST)** — `timbre.performed.pedal` MUST be computed with the pedal state **chased**
+across the window entry, and MUST record `entering_value` and `chased` so a reader can see that
+it was. CC64 is held across bar lines for tens of seconds; a window that starts under a held
+damper and reports `down_fraction: 0` is wrong in the direction that matters, and the clip
+renders dry. This is the same chase `segment clip` performs on the MIDI it writes — the manifest
+and the audio MUST agree about it.
+
+**FPX-173 (SHOULD)** — `pedal` SHOULD report `half_fraction` separately from `down_fraction`.
+The FP-30X sends continuous CC64, verified 2026-08-24 on a 44:26 capture whose 5,950 CC64
+messages include values such as 18 and 3. The MIDI convention that ≥64 is "down" cannot express
+a half-pedal the instrument actually produces, so collapsing to a boolean discards real
+technique.
+
+### 10.2 Rendered timbre — a property of a result, never of a capture
+
+**FPX-174 (MUST)** — A capture MUST NOT carry `timbre.rendered`. A `.fpx` file contains no
+audio and therefore has no tone. Any implementation that attaches a rendered timbre to a
+capture is wrong.
+
+**FPX-175 (MUST)** — Every result that is audio (`.wav`) MUST carry `timbre.rendered`, and it
+MUST be sufficient to reproduce that file from the clip without consulting anything outside the
+bundle. Two `kind`s exist:
+
+- `kind: "soundfont"` — sampled playback. Records `engine`, `soundfont` name and path, `gain`,
+  `sample_rate`, `reverb`. **`gain` is mandatory and is not cosmetic**: fluidsynth's default is
+  0.2, roughly 24 dB below full scale, so a file rendered at the default and a file amplified
+  afterwards are different files and must not both claim to be "the render".
+- `kind: "model"` — the physical model in `fp30x_studio/synth`. Records `engine`, `preset_name`,
+  `model`, `fitted`, `gain`, `reverb`, **and the entire preset inline**.
+
+**FPX-176 (MUST)** — For `kind: "model"`, the preset MUST be embedded in full, not referenced by
+path. Presets are refitted: `acoustic` already carries coefficients measured from 38 Iowa
+Steinway notes and will change when better measurements arrive. A path alone silently
+re-points an old result at a new instrument.
+
+**FPX-177 (SHOULD)** — `rendered` SHOULD carry `fitted`, distinguishing coefficients measured
+against a real instrument from first guesses. As of 2026-08-24 `acoustic` is fitted and
+`electric` is not — its own `note` field says so, and that honesty MUST survive into the
+manifest rather than being flattened to a preset name.
+
+### 10.3 What the pair is for
+
+**FPX-178 (SHOULD)** — Readers SHOULD treat `performed` as searchable and `rendered` as
+reproducible. Sorting a practice session by `pedal.down_fraction` or `voicing_top_lead` is a
+question about the playing; it must not change when the soundfont changes. Rebuilding a `.wav`
+byte-for-byte is a question about the renderer; it must not change when the segmenter changes.
+
+**FPX-179 (MUST NOT)** — An implementation MUST NOT present velocity as timbre. Velocity is the
+gesture that causes tone. What the room heard is not in a `.fpx` file at all — the FP-30X sends
+no audio over BLE-MIDI, and the USB `COMPUTER` port that would carry it is still unresolved
+(§2). Every generated `README.txt` and viewer MUST keep that caveat visible.
+
+### 10.4 Display derivatives
+
+**FPX-180 (MAY)** — A clip MAY carry `envelope`: fixed-count buckets of note density, mean
+velocity and mean pitch across the window. It exists so a viewer can draw the shape of an
+attempt without loading its audio. It is derived, regenerable, and MUST NOT be read as
+evidence of anything the fields above do not already state.
+
+### 10.5 The viewer is part of the format
+
+**FPX-181 (SHOULD)** — A bundle SHOULD contain `index.html`, generated from `fpx.json` by
+`fp30x_studio.fpx.viewer`, so that pointing any static file server at the bundle directory
+renders it. Like `README.txt` it is generated and MUST NOT be hand-authored; if it disagrees
+with the manifest, regenerate it and the manifest wins.
+
+**FPX-182 (MUST)** — A server used to view a bundle MUST honour Range requests. Without them a
+browser cannot seek within a clip: it asks for a byte range, receives the whole file with a
+200, and the playhead snaps back with no error anywhere. `python3 -m http.server` fails this.
+
+
 ---
 
 *If a statement here disagrees with the code, the code wins — check it and correct this document.*
