@@ -29,7 +29,11 @@ CSS = """
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
   font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
-.wrap{max-width:1120px;margin:0 auto;padding:32px 24px 96px}
+.wrap{max-width:1120px;margin:0 auto;padding:28px 24px 96px}
+nav{display:flex;gap:16px;margin-bottom:20px;font-size:14px}
+nav a{color:var(--accent);text-decoration:none;padding:5px 12px;
+  border:1px solid var(--line);border-radius:20px}
+nav a.here{background:var(--accent);color:var(--bg);border-color:var(--accent)}
 h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
 .sub{color:var(--dim);margin:0 0 24px}
 .facts{display:flex;flex-wrap:wrap;gap:8px 28px;padding:14px 18px;
@@ -83,8 +87,12 @@ code{background:var(--line);padding:1px 6px;border-radius:4px;font-size:13px}
 JS = """
 const M = window.FPX;
 const KEY = 'fpx:' + M.capture.name;
-let labels = {};
-try { labels = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { labels = {}; }
+// labels.json on disk is the durable record; localStorage is the live edit
+// layer on top of it. A cleared browser loses edits made since the last save
+// to disk, never the saved ones.
+let labels = Object.assign({}, window.FPX_LABELS || {});
+try { Object.assign(labels, JSON.parse(localStorage.getItem(KEY) || '{}')); }
+catch (e) {}
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(labels)); } catch(e){} }
 
 function envSVG(c){
@@ -223,6 +231,11 @@ def build(bundle_dir: Path) -> Path:
         f'<div class="fact"><b>{k}</b><span>{v}</span></div>' for k, v in facts)
     gaps = "".join(f"<li>{g}</li>" for g in m["known_gaps"])
 
+    lab_path = bundle_dir / "labels.json"
+    seed = {}
+    if lab_path.exists():
+        seed = json.loads(lab_path.read_text()).get("labels", {})
+
     r = m["clips"][0]["timbre"]["rendered"] or {}
     rend = (f"{r.get('engine','—')} · {r.get('soundfont', r.get('preset_name','—'))} "
             f"· gain {r.get('gain','—')}")
@@ -233,6 +246,7 @@ def build(bundle_dir: Path) -> Path:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>{CSS}</style>
 <div class="wrap">
+<nav><a class="here" href="index.html">Clips</a><a href="alignment.html">Alignment</a></nav>
 <h1>{pc['work']}</h1>
 <p class="sub">{pc['composer']} · {pc['key']} · {pc['composed']}, published {pc['published']}
  — practice session of {c['started_utc'][:10]}</p>
@@ -260,13 +274,14 @@ def build(bundle_dir: Path) -> Path:
 
 <footer>
 Rendered with {rend}. Bars are note density, colour is velocity — warm is loud.<br>
-Verdicts and notes are kept in this browser only. Press <b>copy labels as JSON</b> and save
-them into <code>labels.json</code> in the bundle to make them permanent.<br>
+Verdicts seed from <code>labels.json</code> in the bundle and are edited in this browser.
+Press <b>copy labels as JSON</b> and paste into <code>labels.json</code> to make new edits
+permanent — until you do, an edit lives only in this browser.<br>
 Generated from <code>fpx.json</code> by <code>fp30x_studio.fpx.viewer</code>. Never edit this
 file — regenerate it.
 </footer>
 </div>
-<script>window.FPX = {json.dumps(m)};</script>
+<script>window.FPX = {json.dumps(m)}; window.FPX_LABELS = {json.dumps(seed)};</script>
 <script>{JS}</script>
 """
     out = bundle_dir / "index.html"
