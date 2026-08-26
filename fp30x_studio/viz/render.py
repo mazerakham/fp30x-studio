@@ -30,7 +30,8 @@ import tempfile
 from pathlib import Path
 
 from . import perf
-from .scene import MUSIC_START, RUN_TIME, TAKE, TAKE_T0, TAKE_T1, Nocturne
+from . import scene as _scene
+from .scene import MUSIC_START, TAKE, TAKE_T0, TAKE_T1, Nocturne
 
 TICKS_PER_BEAT = 480
 TEMPO_US = 500_000                       # 960 ticks per second
@@ -103,13 +104,17 @@ def render_audio(take: Path, t0: float, t1: float, work: Path,
     gain = PEAK_DBFS - _peak_dbfs(raw)
     out = work / "audio.wav"
     delay = int(MUSIC_START * 1000)
-    fade_out_at = RUN_TIME - FADE_OUT_S
+    # Read through the module, never `from .scene import RUN_TIME`: configure()
+    # recomputes it from the window, and a name bound at import time would keep
+    # the old value and silently truncate or pad the audio.
+    run_time = _scene.RUN_TIME
+    fade_out_at = run_time - FADE_OUT_S
     subprocess.run([
         "ffmpeg", "-y", "-i", str(raw), "-af",
         f"adelay={delay}|{delay},volume={gain:.2f}dB,"
         f"afade=t=in:st={MUSIC_START}:d={FADE_IN_S},"
         f"afade=t=out:st={fade_out_at}:d={FADE_OUT_S},apad",
-        "-t", str(RUN_TIME), "-ar", "48000", "-ac", "2", str(out),
+        "-t", str(run_time), "-ar", "48000", "-ac", "2", str(out),
     ], check=True, capture_output=True)
     return out
 
@@ -145,12 +150,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--quality", choices=sorted(QUALITIES), default="h")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--keep-work", action="store_true")
+    ap.add_argument("--title", default=None)
+    ap.add_argument("--subtitle", default=None)
     args = ap.parse_args(argv)
 
     from .. import core
     soundfont = core.soundfont_path()
     if not soundfont.exists():
         raise SystemExit(f"soundfont missing: {soundfont}")
+
+    cfg = _scene.configure(args.take, args.window[0], args.window[1],
+                           title=args.title, subtitle=args.subtitle)
+    print(f"  take   {cfg['take']}\n  window {cfg['t0']:.2f}-{cfg['t1']:.2f} s"
+          f"  ->  {cfg['run_time']:.2f} s of video")
 
     work = Path(tempfile.mkdtemp(prefix="fpx-viz-"))
     audio = render_audio(args.take, args.window[0], args.window[1], work, soundfont)
@@ -159,7 +171,8 @@ def main(argv: list[str] | None = None) -> int:
     out = args.out
     if out is None:
         DEFAULT_OUT.mkdir(parents=True, exist_ok=True)
-        out = DEFAULT_OUT / "nocturne-op62-1-trilled-reprise-10s.mp4"
+        stem = Path(args.take).stem
+        out = DEFAULT_OUT / (f"{stem}-{args.window[0]:.0f}-{args.window[1]:.0f}s.mp4")
     subprocess.run([
         "ffmpeg", "-y", "-i", str(silent), "-i", str(audio),
         "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-ar", "48000",

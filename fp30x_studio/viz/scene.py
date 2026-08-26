@@ -82,6 +82,41 @@ TAKE_T0, TAKE_T1 = 347.0, 353.5
 
 TITLE = "Nocturne in B major"
 SUBTITLE = "Op. 62 Nº 1"
+
+
+def configure(take=None, t0=None, t1=None, title=None, subtitle=None):
+    """Point the scene at a different take, window or piece.
+
+    **This exists because the scene used to read the constants below directly
+    and `render.py` only forwarded `--take`/`--window` to the AUDIO half.** The
+    result rendered the audio of one take under the notation of another and
+    reported success: on 2026-08-26 Jake got his own playing from that morning
+    scored against the previous week's trilled reprise, and said so — "sound did
+    not align with visual". Nothing errored, because both halves were
+    individually valid. The CLI accepted arguments it silently ignored.
+
+    So the window is no longer a constant that a caller may or may not have
+    honoured; it is set here, once, and every derived quantity is recomputed
+    from it. `RUN_TIME` follows the window length rather than the window being
+    required to be exactly 6.5 s, which is also what makes a longer clip
+    possible.
+    """
+    global TAKE, TAKE_T0, TAKE_T1, TITLE, SUBTITLE, RUN_TIME, FADE_OUT
+    if take is not None:
+        TAKE = Path(take)
+    if t0 is not None:
+        TAKE_T0 = float(t0)
+    if t1 is not None:
+        TAKE_T1 = float(t1)
+    if title is not None:
+        TITLE = title
+    if subtitle is not None:
+        SUBTITLE = subtitle
+    # The music occupies the window; the head is the title and staff build.
+    RUN_TIME = MUSIC_START + (TAKE_T1 - TAKE_T0)
+    FADE_OUT = (RUN_TIME - 0.70, RUN_TIME)
+    return {"take": str(TAKE), "t0": TAKE_T0, "t1": TAKE_T1,
+            "run_time": RUN_TIME, "title": TITLE, "subtitle": SUBTITLE}
 TITLE_FONT = "Didot"          # 1780s Parisian neoclassical: right for 1846.
 
 # --------------------------------------------------------------------- timeline
