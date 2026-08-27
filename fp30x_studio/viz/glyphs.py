@@ -255,6 +255,27 @@ def natural(color: str = "#FFFFFF", opacity: float = 1.0) -> VGroup:
     )
 
 
+def flat(color: str = "#FFFFFF", opacity: float = 1.0) -> VGroup:
+    """Flat sign: a stem with a filled lobe hung on its lower right.
+
+    Unlike the sharp and the natural, a flat is not two verticals and two
+    bars -- it is a stem and a *curve*, and it sits LOW: the lobe straddles the
+    line or space it governs while the stem rises well above it. Getting that
+    vertical offset wrong is the usual way a flat looks wrong, so the lobe is
+    centred on y = 0, which is the notehead's own centre.
+    """
+    stem = _vert(-0.20, -0.30, 1.05, 0.070, color, opacity)
+    # The lobe: a teardrop, wide at the bottom, closing back onto the stem.
+    th = np.linspace(0.0, 1.0, 48)
+    x = -0.20 + 0.52 * np.sin(np.pi * th) ** 1.25
+    y = 0.34 - 0.66 * th - 0.10 * np.sin(np.pi * th)
+    lobe = VMobject()
+    lobe.set_points_as_corners([np.array([px, py, 0.0]) for px, py in zip(x, y)]
+                               + [np.array([-0.20, 0.34, 0.0])])
+    lobe.set_fill(color, opacity=opacity).set_stroke(color, width=0.9, opacity=opacity)
+    return VGroup(stem, lobe)
+
+
 # -------------------------------------------------------------------- noteheads
 
 _HEAD_TILT = np.deg2rad(21.0)      # noteheads lean up to the right

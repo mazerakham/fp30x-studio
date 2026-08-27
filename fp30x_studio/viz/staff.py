@@ -39,20 +39,47 @@ _LETTER = "CDEFGAB"
 #: that has to be printed*, not the pitch's alteration: in B major a C-sharp
 #: prints nothing and a C-natural prints a natural.
 SHARP_KEYS: dict[str, dict[int, tuple[int, str]]] = {
-    # B major: F# C# G# D# A#
+    # B major / G# minor: F# C# G# D# A#
     "B": {
         0: (0, "natural"), 1: (0, ""), 2: (1, "natural"), 3: (1, ""),
         4: (2, ""), 5: (3, "natural"), 6: (3, ""), 7: (4, "natural"),
         8: (4, ""), 9: (5, "natural"), 10: (5, ""), 11: (6, ""),
     },
+    # A-flat major / F minor: Bb Eb Ab Db.  Added 2026-08-27 because the scene
+    # had exactly one key in this table and rendered a four-flat passage under
+    # five sharps -- every note then needed a natural to cancel a sharp that
+    # should not have been there. Jake spotted it from the naturals alone.
+    #
+    # Spelled flat throughout: pc 6 is G-flat, not F-sharp. No entry crosses an
+    # octave boundary (no C-flat, no B-sharp), which is what `spell`'s octave
+    # arithmetic below requires.
+    # Ab Bb C Db Eb F G are IN the signature and therefore print nothing.
+    # Only the four notes outside it carry a mark.
+    "Ab": {
+        0: (0, ""), 1: (1, ""), 2: (1, "natural"), 3: (2, ""),
+        4: (2, "natural"), 5: (3, ""), 6: (4, "flat"), 7: (4, ""),
+        8: (5, ""), 9: (5, "natural"), 10: (6, ""), 11: (6, "natural"),
+    },
 }
 
-#: Order of sharps in a key signature, and the staff positions they occupy.
-#: Given as (letter, octave) because the position is a *spelling*, not a pitch.
-KEY_SIG_B_MAJOR = {
-    "treble": [("F", 5), ("C", 5), ("G", 5), ("D", 5), ("A", 4)],
-    "bass": [("F", 3), ("C", 3), ("G", 3), ("D", 3), ("A", 2)],
+#: Where each accidental of a key signature sits. Sharps run F C G D A E B,
+#: flats run the same order reversed, B E A D G C F -- and the flats sit lower
+#: on the staff, which is why they cannot share the sharps' positions.
+KEY_SIGNATURES: dict[str, dict] = {
+    "B": {
+        "accidental": "sharp",
+        "treble": [("F", 5), ("C", 5), ("G", 5), ("D", 5), ("A", 4)],
+        "bass": [("F", 3), ("C", 3), ("G", 3), ("D", 3), ("A", 2)],
+    },
+    "Ab": {
+        "accidental": "flat",
+        "treble": [("B", 4), ("E", 5), ("A", 4), ("D", 5)],
+        "bass": [("B", 2), ("E", 3), ("A", 2), ("D", 3)],
+    },
 }
+
+#: Kept as an alias: older code referred to this name directly.
+KEY_SIG_B_MAJOR = KEY_SIGNATURES["B"]
 
 MIDDLE_C_STEP = 7 * 4 + 0          # C4
 
@@ -65,7 +92,14 @@ def spell(midi: int, key: str = "B") -> tuple[int, str]:
     key's natural spelling. Add one and this line breaks silently, so the table
     and this arithmetic have to be changed together.
     """
-    letter, acc = SHARP_KEYS[key][midi % 12]
+    try:
+        letter, acc = SHARP_KEYS[key][midi % 12]
+    except KeyError:
+        raise KeyError(
+            f"no spelling table for key {key!r}; have {sorted(SHARP_KEYS)}. "
+            "A missing key does not fail loudly anywhere else -- it silently "
+            "spells every note in the wrong key -- so it fails loudly here."
+        ) from None
     return 7 * (midi // 12 - 1) + letter, acc
 
 
@@ -125,12 +159,15 @@ class GrandStaff:
         b.shift([x + 0.20, self.y_of("F", 3), 0])
         return VGroup(t, b)
 
-    def key_signature(self, x: float, color: str = "#FFFFFF") -> VGroup:
-        """Five sharps, B major, both staves."""
+    def key_signature(self, x: float, color: str = "#FFFFFF",
+                      key: str = "B") -> VGroup:
+        """The key signature for ``key``, on both staves."""
+        spec = KEY_SIGNATURES[key]
+        maker = glyphs.flat if spec["accidental"] == "flat" else glyphs.sharp
         g = VGroup()
-        for staff, entries in KEY_SIG_B_MAJOR.items():
-            for i, (letter, octave) in enumerate(entries):
-                s = glyphs.sharp(color).scale(self.space, about_point=ORIGIN)
+        for staff in ("treble", "bass"):
+            for i, (letter, octave) in enumerate(spec[staff]):
+                s = maker(color).scale(self.space, about_point=ORIGIN)
                 s.shift([x + i * 0.62 * self.space * 2.0, self.y_of(letter, octave), 0])
                 g.add(s)
         return g
@@ -173,7 +210,8 @@ class GrandStaff:
                    opacity: float = 1.0) -> VMobject | None:
         if not name:
             return None
-        maker = glyphs.sharp if name == "sharp" else glyphs.natural
+        maker = {"sharp": glyphs.sharp, "flat": glyphs.flat}.get(
+            name, glyphs.natural)
         m = maker(color, opacity).scale(self.space, about_point=ORIGIN)
         m.shift([x - 1.35 * self.space, self.y(step), 0])
         return m

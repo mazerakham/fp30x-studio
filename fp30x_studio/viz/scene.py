@@ -83,8 +83,14 @@ TAKE_T0, TAKE_T1 = 347.0, 353.5
 TITLE = "Nocturne in B major"
 SUBTITLE = "Op. 62 Nº 1"
 
+#: Which key signature to engrave, and to spell every note against. This was a
+#: hardcoded five sharps until 2026-08-27, when a four-flat passage was
+#: rendered under it and every note came out carrying a natural to cancel a
+#: sharp that should never have been printed. See staff.KEY_SIGNATURES.
+KEY = "B"
 
-def configure(take=None, t0=None, t1=None, title=None, subtitle=None):
+
+def configure(take=None, t0=None, t1=None, title=None, subtitle=None, key=None):
     """Point the scene at a different take, window or piece.
 
     **This exists because the scene used to read the constants below directly
@@ -101,7 +107,7 @@ def configure(take=None, t0=None, t1=None, title=None, subtitle=None):
     required to be exactly 6.5 s, which is also what makes a longer clip
     possible.
     """
-    global TAKE, TAKE_T0, TAKE_T1, TITLE, SUBTITLE, RUN_TIME, FADE_OUT
+    global TAKE, TAKE_T0, TAKE_T1, TITLE, SUBTITLE, RUN_TIME, FADE_OUT, KEY
     if take is not None:
         TAKE = Path(take)
     if t0 is not None:
@@ -112,11 +118,18 @@ def configure(take=None, t0=None, t1=None, title=None, subtitle=None):
         TITLE = title
     if subtitle is not None:
         SUBTITLE = subtitle
+    if key is not None:
+        from .staff import KEY_SIGNATURES
+        if key not in KEY_SIGNATURES:
+            raise ValueError(f"no key signature for {key!r}; "
+                             f"have {sorted(KEY_SIGNATURES)}")
+        KEY = key
     # The music occupies the window; the head is the title and staff build.
     RUN_TIME = MUSIC_START + (TAKE_T1 - TAKE_T0)
     FADE_OUT = (RUN_TIME - 0.70, RUN_TIME)
     return {"take": str(TAKE), "t0": TAKE_T0, "t1": TAKE_T1,
-            "run_time": RUN_TIME, "title": TITLE, "subtitle": SUBTITLE}
+            "run_time": RUN_TIME, "title": TITLE, "subtitle": SUBTITLE,
+            "key": KEY}
 TITLE_FONT = "Didot"          # 1780s Parisian neoclassical: right for 1846.
 
 # --------------------------------------------------------------------- timeline
@@ -268,7 +281,7 @@ class Nocturne(MovingCameraScene):
         self._line_ends = [(m.get_start().copy(), m.get_end().copy()) for m in self.lines]
         self.add(self.lines)
         self.clefs = gs.clefs(CLEF_X, INK).set_opacity(0.0)
-        self.keysig = gs.key_signature(KEYSIG_X, INK).set_opacity(0.0)
+        self.keysig = gs.key_signature(KEYSIG_X, INK, KEY).set_opacity(0.0)
         self.add(self.clefs, self.keysig)
 
     # --------------------------------------------------------------- the notes
@@ -288,7 +301,7 @@ class Nocturne(MovingCameraScene):
                   opacity: float | None = None, with_stem: bool = True,
                   with_acc: bool = True, glow_color=None,
                   glow_boost: float = 1.0) -> _NoteRec:
-        step, acc = spell(n.pitch)
+        step, acc = spell(n.pitch, KEY)
         x, y = self._x(n.t), gs.y(step)
         v = n.velocity / 127.0
         base = 0.45 + 0.55 * v if opacity is None else opacity
@@ -349,7 +362,7 @@ class Nocturne(MovingCameraScene):
                                                 glow_color=colour, glow_boost=2.1))
 
         # Layer 3: the tally. One crest per onset.
-        step = spell(tr.principal)[0]
+        step = spell(tr.principal, KEY)[0]
         y = gs.y(step) + 3.9 * gs.space
         x0, x1 = self._x(tr.t0), self._x(tr.t1)
         full = wavy(x0, x1, y, tr.n_onsets, 0.52 * gs.space, colour, 0.95,

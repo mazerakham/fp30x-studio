@@ -152,6 +152,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--keep-work", action="store_true")
     ap.add_argument("--title", default=None)
     ap.add_argument("--subtitle", default=None)
+    ap.add_argument("--key", default=None,
+                    help="key signature to engrave and spell against, e.g. B or Ab")
     args = ap.parse_args(argv)
 
     from .. import core
@@ -160,9 +162,10 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"soundfont missing: {soundfont}")
 
     cfg = _scene.configure(args.take, args.window[0], args.window[1],
-                           title=args.title, subtitle=args.subtitle)
+                           title=args.title, subtitle=args.subtitle,
+                           key=args.key)
     print(f"  take   {cfg['take']}\n  window {cfg['t0']:.2f}-{cfg['t1']:.2f} s"
-          f"  ->  {cfg['run_time']:.2f} s of video")
+          f"  ->  {cfg['run_time']:.2f} s of video\n  key    {cfg['key']}")
 
     work = Path(tempfile.mkdtemp(prefix="fpx-viz-"))
     audio = render_audio(args.take, args.window[0], args.window[1], work, soundfont)
