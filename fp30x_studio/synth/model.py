@@ -45,7 +45,6 @@ __all__ = [
     "inharmonicity_at",
     "rolloff_at",
     "partial_frequencies",
-    "radiation_gain",
     "decay_scale_at",
     "damper_contact",
     "velocity_norm",

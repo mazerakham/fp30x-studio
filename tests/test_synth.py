@@ -434,3 +434,113 @@ def test_the_score_read_from_the_piece_matches_what_was_captured():
     positions = {p for _, p in s.pedal}
     assert len(positions) > 100
     assert max(n.velocity_on for n in s.notes) <= model.VELOCITY_FULL_SCALE
+
+
+# -- the partials inspector agrees with the renderer ------------------------
+#
+# ``synth partials`` is the only way to read a note's coefficients without
+# writing a script, and it is worth exactly as much as its agreement with
+# render_string. It silently stopped agreeing once already: a refactor moved
+# the strike point, the two per-register laws and the decay halving length out
+# of module constants and into the preset, and the inspector kept reading the
+# module -- so it crashed on the strike point and, worse, quietly ignored
+# ``rolloff_per_octave`` and printed the same bass spectrum for two presets
+# that differ in nothing else. These pin the agreement rather than the code.
+
+def _need_preset(name: str) -> None:
+    """Only ``acoustic`` and ``electric`` are committed; the b*/v* variants are
+    the 2026-09-05 exploration and may not be in a given checkout."""
+    if not (PRESET_DIR / f"{name}.json").exists():
+        pytest.skip(f"preset {name!r} is not in this checkout")
+
+
+def _partials_table(preset_name: str, note: int, velocity: int = 80) -> str:
+    import io
+    import contextlib
+
+    from fp30x_studio.synth.cli import build_parser
+
+    args = build_parser().parse_args(
+        ["partials", "-p", preset_name, "-n", str(note), "-v", str(velocity)])
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert args.func(args) == 0
+    return buf.getvalue()
+
+
+def _printed_amps(preset_name: str, note: int, velocity: int = 80):
+    import re
+
+    row = re.compile(r"\s*(\d+)\s+([\d.]+)\s+\S+\s+([\d.]+)\s+\S+\s+([\d.]+)\s+\w+\s*$")
+    out = {}
+    for line in _partials_table(preset_name, note, velocity).splitlines():
+        m = row.match(line)
+        if m:
+            out[int(m[1])] = (float(m[2]), float(m[3]))
+    return out
+
+
+def _renderer_amps(preset: Preset, note: int, velocity: int = 80):
+    """The amplitudes render_string computes, by the renderer's own route."""
+    f0 = voices.note_frequency(note)
+    B = model.inharmonicity_at(note, preset.inharmonicity_B,
+                               preset.inharmonicity_decades_per_octave,
+                               preset.inharmonicity_floor)
+    n, f = model.partial_frequencies(f0, preset.partials, B, SR / 2)
+    v = model.velocity_norm(velocity)
+    roll = model.rolloff_at(note, preset.partial_amp_rolloff,
+                            preset.rolloff_per_octave)
+    a = n ** (-roll) * n ** (preset.velocity_brightness * (v - 0.5))
+    if preset.hammer_strike_point > 1e-4:
+        a = a * np.abs(np.sin(n * np.pi * preset.hammer_strike_point))
+    a = a / a.sum()
+    return {int(k): (float(ff), float(aa)) for k, ff, aa in zip(n, f, a)}
+
+
+@pytest.mark.parametrize("name", ["acoustic", "b2-darkbass", "b1-8part",
+                                  "v4-whine", "v8-whine-bassfix"])
+@pytest.mark.parametrize("note", [28, 33, 45, 69, 84])
+def test_partials_prints_the_amplitudes_the_renderer_uses(name, note):
+    _need_preset(name)
+    preset = load_preset(name)
+    printed, actual = _printed_amps(name, note), _renderer_amps(preset, note)
+    assert printed.keys() == actual.keys()
+    for k in printed:
+        assert printed[k][0] == pytest.approx(actual[k][0], rel=1e-4)
+        assert printed[k][1] == pytest.approx(actual[k][1], abs=5e-6)
+
+
+def test_partials_honours_rolloff_per_octave():
+    """The two presets differ in nothing but ``rolloff_per_octave``, so away
+    from the reference note their printed spectra must differ -- and at A4,
+    where that coefficient has no lever, they must agree exactly."""
+    assert load_preset("b2-darkbass").rolloff_per_octave != \
+        load_preset("acoustic").rolloff_per_octave
+    a28, b28 = _printed_amps("acoustic", 28), _printed_amps("b2-darkbass", 28)
+    assert max(abs(a28[k][1] - b28[k][1]) for k in a28) > 0.01
+    a69, b69 = _printed_amps("acoustic", 69), _printed_amps("b2-darkbass", 69)
+    assert a69 == b69
+
+
+def test_partials_reports_the_strike_point_comb_that_traced_the_bass_clank():
+    """The 2026-09-05 finding: on a low E the comb re-peaks above its first
+    null at 1/0.1185 = 8.44, putting partials 11-14 at 457-585 Hz back up
+    near the level of the fundamental region."""
+    text = _partials_table("acoustic", 28)
+    assert "8.44" in text
+    amps = _printed_amps("acoustic", 28)
+    assert amps[8][1] < amps[7][1] and amps[8][1] < amps[12][1]   # the null
+    assert 450 < amps[11][0] < 460 and 580 < amps[14][0] < 590
+    assert amps[12][1] > 0.5 * max(a for _, a in amps.values())
+
+
+def test_partials_runs_for_the_tine_model_too():
+    text = _partials_table("electric", 45)
+    assert "bell partial" in text and "FM index" in text
+    assert "a_n" not in text, "a tine has no n^-rolloff series"
+
+
+def test_model_all_names_exist():
+    """``__all__`` carried ``radiation_gain`` after the function was removed,
+    so ``from .model import *`` raised AttributeError."""
+    assert [n for n in model.__all__ if not hasattr(model, n)] == []
