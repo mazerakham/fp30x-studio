@@ -1,0 +1,259 @@
+<!doctype html><meta charset="utf-8"><title>synth partials fix</title>
+<style>
+:root{color-scheme:dark}
+body{background:#101215;color:#dfe3e8;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+margin:0;padding:40px 20px}
+main{max-width:760px;margin:0 auto}
+h1{font-size:24px;margin:0 0 4px}
+h2{font-size:17px;margin:34px 0 12px;color:#9fb4c8;font-weight:600;
+border-bottom:1px solid #262c33;padding-bottom:6px}
+h3{font-size:15px;margin:0;font-weight:600}
+.sub{color:#7d8894;margin:0 0 26px}
+.card{background:#171a1f;border:1px solid #262b33;border-radius:10px;padding:16px 18px;margin:14px 0}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.badge{font-size:11.5px;padding:3px 9px;border-radius:20px;white-space:nowrap;font-weight:600}
+.ok{background:#16351f;color:#79d18f;border:1px solid #275c37}
+.bad{background:#3a1a1a;color:#e08b8b;border:1px solid #5e2c2c}
+.you{background:#3a3018;color:#e3bb6a;border:1px solid #5e4a20}
+.note{color:#98a2ae;margin:0 0 12px;font-size:13.5px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;
+font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+th{text-align:right;color:#7d8894;font-weight:600;padding:4px 8px;border-bottom:1px solid #2a3038}
+td{text-align:right;padding:3px 8px;border-bottom:1px solid #1d2127}
+.dim{color:#6d7783}
+.up{color:#e3bb6a}.down{color:#7fb0e0}.same{color:#6d7783}
+.cmd{display:flex;gap:8px;align-items:stretch;margin-top:12px}
+code{background:#0c0e11;border:1px solid #262b33;border-radius:6px;padding:8px 10px;
+font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;flex:1;
+overflow-x:auto;white-space:pre;display:block}
+button{background:#22303f;color:#cfe0f0;border:1px solid #33465a;border-radius:6px;
+padding:0 14px;cursor:pointer;font-size:12.5px;font-weight:600}
+button:hover{background:#2b3c4e}
+pre{background:#0c0e11;border:1px solid #262b33;border-radius:8px;padding:14px;
+overflow-x:auto;font-size:12px;line-height:1.5;white-space:pre-wrap;max-height:340px;overflow-y:auto}
+ul{padding-left:20px} li{margin:5px 0}
+.k{color:#e3bb6a;font-weight:600}
+</style>
+<main>
+<h1>synth partials: fixed, and it was wrong before it crashed</h1>
+<p class=sub>Commit <span class=k>875b4aa</span> on <span class=k>fpx-format-spec</span> &middot;
+~/workspace/audio/fp30x-studio &middot; 397 tests pass</p>
+
+<div class=card>
+<div class=hd><h3>The crash was the smaller half</h3><span class="badge bad">silent since the refactor</span></div>
+<p class=note>The refactor that moved <b>hammer_strike_point</b> into the preset moved three other
+things with it. <code style="display:inline;padding:1px 5px">cmd_partials</code> kept reading module
+defaults for all four. Only the strike point raised AttributeError; the other three were optional
+arguments, so they went quiet.</p>
+<ul>
+<li><b>hammer_strike_point</b> &mdash; used 0.091, preset says 0.1185. The visible crash.</li>
+<li><b>rolloff_per_octave</b> &mdash; ignored. This is the one that mattered.</li>
+<li><b>inharmonicity_decades_per_octave</b>, <b>inharmonicity_floor</b> &mdash; ignored.</li>
+<li><b>decay_halving_semitones</b> &mdash; ignored; tau_1 used the library default.</li>
+</ul>
+<p class=note><b>Consequence:</b> <code style="display:inline;padding:1px 5px">rolloff_at</code> is the
+largest per-register correction in the model, so with it ignored the printed a<sub>n</sub> column was
+<b>identical for every note and every preset</b>, up to frequency. acoustic and b2-darkbass differ in
+nothing but <b>rolloff_per_octave</b> &mdash; they printed the same bass spectrum.</p>
+</div>
+
+<h2>Before and after, for the eight runs you asked for</h2>
+<p class=sub style="margin-bottom:0">The &ldquo;before&rdquo; column is the old formula recomputed
+(it could not run &mdash; it crashed on the strike point). Note how it never changes between the four
+notes or the two presets.</p>
+
+<div class=card>
+  <div class=hd><h3>acoustic &middot; note 28 <span class=dim>(E1)</span></h3>
+  <span class="badge ok">FFT agrees to 0.55%</span></div>
+  <p class=note>32 partials within 60 dB of the fundamental; worst disagreement between the
+  printed a<sub>n</sub> and the rendered audio is 0.55%.</p>
+  <table><thead><tr><th>n</th><th>f<sub>n</sub> Hz</th><th>a<sub>n</sub> before</th><th>a<sub>n</sub> after</th><th>change</th></tr></thead><tbody><tr><td>1</td><td>41.21</td><td class=dim>0.57726</td><td><b>0.04253</b></td><td class=down>0.07x</td></tr><tr><td>2</td><td>82.43</td><td class=dim>0.18621</td><td><b>0.06107</b></td><td class=down>0.33x</td></tr><tr><td>3</td><td>123.69</td><td class=dim>0.09171</td><td><b>0.06956</b></td><td class=down>0.76x</td></tr><tr><td>4</td><td>165.00</td><td class=dim>0.05265</td><td><b>0.06924</b></td><td class=up>1.32x</td></tr><tr><td>5</td><td>206.37</td><td class=dim>0.03226</td><td><b>0.06120</b></td><td class=up>1.90x</td></tr><tr><td>6</td><td>247.84</td><td class=dim>0.02017</td><td><b>0.04702</b></td><td class=up>2.33x</td></tr><tr><td>7</td><td>289.40</td><td class=dim>0.01246</td><td><b>0.02873</b></td><td class=up>2.31x</td></tr><tr><td>8</td><td>331.09</td><td class=dim>0.00734</td><td><b>0.00871</b></td><td class=up>1.19x</td></tr><tr><td>9</td><td>372.91</td><td class=dim>0.00387</td><td><b>0.01062</b></td><td class=up>2.74x</td></tr><tr><td>10</td><td>414.88</td><td class=dim>0.00153</td><td><b>0.02703</b></td><td class=up>17.67x</td></tr><tr><td>11</td><td>457.03</td><td class=dim>0.00001</td><td><b>0.03874</b></td><td class=up>3874.00x</td></tr><tr><td>12</td><td>499.35</td><td class=dim>0.00098</td><td><b>0.04461</b></td><td class=up>45.52x</td></tr><tr><td>13</td><td>541.89</td><td class=dim>0.00152</td><td><b>0.04426</b></td><td class=up>29.12x</td></tr><tr><td>14</td><td>584.64</td><td class=dim>0.00175</td><td><b>0.03809</b></td><td class=up>21.77x</td></tr><tr><td>15</td><td>627.62</td><td class=dim>0.00176</td><td><b>0.02721</b></td><td class=up>15.46x</td></tr><tr><td>16</td><td>670.86</td><td class=dim>0.00162</td><td><b>0.01325</b></td><td class=up>8.18x</td></tr></tbody></table><p class=dim>first 16 of 32 partials</p>
+  <div class=cmd><code id="cacoustic28">cd ~/workspace/audio/fp30x-studio &amp;&amp; .venv/bin/python -m fp30x_studio.synth partials -p acoustic -n 28 -v 80</code>
+  <button data-c="cacoustic28">Copy</button></div>
+</div>
+<div class=card>
+  <div class=hd><h3>acoustic &middot; note 33 <span class=dim>(A1)</span></h3>
+  <span class="badge ok">FFT agrees to 0.56%</span></div>
+  <p class=note>32 partials within 60 dB of the fundamental; worst disagreement between the
+  printed a<sub>n</sub> and the rendered audio is 0.56%.</p>
+  <table><thead><tr><th>n</th><th>f<sub>n</sub> Hz</th><th>a<sub>n</sub> before</th><th>a<sub>n</sub> after</th><th>change</th></tr></thead><tbody><tr><td>1</td><td>55.00</td><td class=dim>0.57726</td><td><b>0.07533</b></td><td class=down>0.13x</td></tr><tr><td>2</td><td>110.03</td><td class=dim>0.18621</td><td><b>0.08983</b></td><td class=down>0.48x</td></tr><tr><td>3</td><td>165.10</td><td class=dim>0.09171</td><td><b>0.09178</b></td><td class=same>1.00x</td></tr><tr><td>4</td><td>220.24</td><td class=dim>0.05265</td><td><b>0.08458</b></td><td class=up>1.61x</td></tr><tr><td>5</td><td>275.48</td><td class=dim>0.03226</td><td><b>0.07043</b></td><td class=up>2.18x</td></tr><tr><td>6</td><td>330.82</td><td class=dim>0.02017</td><td><b>0.05153</b></td><td class=up>2.55x</td></tr><tr><td>7</td><td>386.31</td><td class=dim>0.01246</td><td><b>0.03022</b></td><td class=up>2.43x</td></tr><tr><td>8</td><td>441.95</td><td class=dim>0.00734</td><td><b>0.00884</b></td><td class=up>1.20x</td></tr><tr><td>9</td><td>497.77</td><td class=dim>0.00387</td><td><b>0.01044</b></td><td class=up>2.70x</td></tr><tr><td>10</td><td>553.80</td><td class=dim>0.00153</td><td><b>0.02584</b></td><td class=up>16.89x</td></tr><tr><td>11</td><td>610.06</td><td class=dim>0.00001</td><td><b>0.03609</b></td><td class=up>3609.00x</td></tr><tr><td>12</td><td>666.56</td><td class=dim>0.00098</td><td><b>0.04060</b></td><td class=up>41.43x</td></tr><tr><td>13</td><td>723.33</td><td class=dim>0.00152</td><td><b>0.03943</b></td><td class=up>25.94x</td></tr><tr><td>14</td><td>780.40</td><td class=dim>0.00175</td><td><b>0.03327</b></td><td class=up>19.01x</td></tr><tr><td>15</td><td>837.77</td><td class=dim>0.00176</td><td><b>0.02333</b></td><td class=up>13.26x</td></tr><tr><td>16</td><td>895.49</td><td class=dim>0.00162</td><td><b>0.01116</b></td><td class=up>6.89x</td></tr></tbody></table><p class=dim>first 16 of 32 partials</p>
+  <div class=cmd><code id="cacoustic33">cd ~/workspace/audio/fp30x-studio &amp;&amp; .venv/bin/python -m fp30x_studio.synth partials -p acoustic -n 33 -v 80</code>
+  <button data-c="cacoustic33">Copy</button></div>
+</div>
+<div class=card>
+  <div class=hd><h3>acoustic &middot; note 45 <span class=dim>(A2)</span></h3>
+  <span class="badge ok">FFT agrees to 0.49%</span></div>
+  <p class=note>32 partials within 60 dB of the fundamental; worst disagreement between the
+  printed a<sub>n</sub> and the rendered audio is 0.49%.</p>
+  <table><thead><tr><th>n</th><th>f<sub>n</sub> Hz</th><th>a<sub>n</sub> before</th><th>a<sub>n</sub> after</th><th>change</th></tr></thead><tbody><tr><td>1</td><td>110.01</td><td class=dim>0.57726</td><td><b>0.21828</b></td><td class=down>0.38x</td></tr><tr><td>2</td><td>220.06</td><td class=dim>0.18621</td><td><b>0.16671</b></td><td class=same>0.90x</td></tr><tr><td>3</td><td>330.21</td><td class=dim>0.09171</td><td><b>0.13123</b></td><td class=up>1.43x</td></tr><tr><td>4</td><td>440.49</td><td class=dim>0.05265</td><td><b>0.10051</b></td><td class=up>1.91x</td></tr><tr><td>5</td><td>550.95</td><td class=dim>0.03226</td><td><b>0.07251</b></td><td class=up>2.25x</td></tr><tr><td>6</td><td>661.65</td><td class=dim>0.02017</td><td><b>0.04718</b></td><td class=up>2.34x</td></tr><tr><td>7</td><td>772.61</td><td class=dim>0.01246</td><td><b>0.02506</b></td><td class=up>2.01x</td></tr><tr><td>8</td><td>883.90</td><td class=dim>0.00734</td><td><b>0.00672</b></td><td class=same>0.92x</td></tr><tr><td>9</td><td>995.55</td><td class=dim>0.00387</td><td><b>0.00737</b></td><td class=up>1.90x</td></tr><tr><td>10</td><td>1107.60</td><td class=dim>0.00153</td><td><b>0.01703</b></td><td class=up>11.13x</td></tr><tr><td>11</td><td>1220.11</td><td class=dim>0.00001</td><td><b>0.02238</b></td><td class=up>2238.00x</td></tr><tr><td>12</td><td>1333.12</td><td class=dim>0.00098</td><td><b>0.02381</b></td><td class=up>24.30x</td></tr><tr><td>13</td><td>1446.66</td><td class=dim>0.00152</td><td><b>0.02196</b></td><td class=up>14.45x</td></tr><tr><td>14</td><td>1560.79</td><td class=dim>0.00175</td><td><b>0.01767</b></td><td class=up>10.10x</td></tr><tr><td>15</td><td>1675.55</td><td class=dim>0.00176</td><td><b>0.01185</b></td><td class=up>6.73x</td></tr><tr><td>16</td><td>1790.97</td><td class=dim>0.00162</td><td><b>0.00544</b></td><td class=up>3.36x</td></tr></tbody></table><p class=dim>first 16 of 32 partials</p>
+  <div class=cmd><code id="cacoustic45">cd ~/workspace/audio/fp30x-studio &amp;&amp; .venv/bin/python -m fp30x_studio.synth partials -p acoustic -n 45 -v 80</code>
+  <button data-c="cacoustic45">Copy</button></div>
+</div>
+<div class=card>
+  <div class=hd><h3>acoustic &middot; note 69 <span class=dim>(A4)</span></h3>
+  <span class="badge ok">FFT agrees to 0.64%</span></div>
+  <p class=note>18 partials within 60 dB of the fundamental; worst disagreement between the
+  printed a<sub>n</sub> and the rendered audio is 0.64%.</p>
+  <table><thead><tr><th>n</th><th>f<sub>n</sub> Hz</th><th>a<sub>n</sub> before</th><th>a<sub>n</sub> after</th><th>change</th></tr></thead><tbody><tr><td>1</td><td>440.14</td><td class=dim>0.57726</td><td><b>0.60812</b></td><td class=same>1.05x</td></tr><tr><td>2</td><td>881.14</td><td class=dim>0.18621</td><td><b>0.19046</b></td><td class=same>1.02x</td></tr><tr><td>3</td><td>1323.84</td><td class=dim>0.09171</td><td><b>0.08901</b></td><td class=same>0.97x</td></tr><tr><td>4</td><td>1769.10</td><td class=dim>0.05265</td><td><b>0.04709</b></td><td class=same>0.89x</td></tr><tr><td>5</td><td>2217.74</td><td class=dim>0.03226</td><td><b>0.02550</b></td><td class=down>0.79x</td></tr><tr><td>6</td><td>2670.61</td><td class=dim>0.02017</td><td><b>0.01312</b></td><td class=down>0.65x</td></tr><tr><td>7</td><td>3128.50</td><td class=dim>0.01246</td><td><b>0.00572</b></td><td class=down>0.46x</td></tr><tr><td>8</td><td>3592.23</td><td class=dim>0.00734</td><td><b>0.00129</b></td><td class=down>0.18x</td></tr><tr><td>9</td><td>4062.57</td><td class=dim>0.00387</td><td><b>0.00122</b></td><td class=down>0.32x</td></tr><tr><td>10</td><td>4540.28</td><td class=dim>0.00153</td><td><b>0.00246</b></td><td class=up>1.61x</td></tr><tr><td>11</td><td>5026.11</td><td class=dim>0.00001</td><td><b>0.00285</b></td><td class=up>285.00x</td></tr><tr><td>12</td><td>5520.78</td><td class=dim>0.00098</td><td><b>0.00272</b></td><td class=up>2.78x</td></tr><tr><td>13</td><td>6024.98</td><td class=dim>0.00152</td><td><b>0.00226</b></td><td class=up>1.49x</td></tr><tr><td>14</td><td>6539.38</td><td class=dim>0.00175</td><td><b>0.00165</b></td><td class=same>0.94x</td></tr><tr><td>15</td><td>7064.64</td><td class=dim>0.00176</td><td><b>0.00101</b></td><td class=down>0.57x</td></tr><tr><td>16</td><td>7601.36</td><td class=dim>0.00162</td><td><b>0.00043</b></td><td class=down>0.27x</td></tr></tbody></table><p class=dim>first 16 of 32 partials</p>
+  <div class=cmd><code id="cacoustic69">cd ~/workspace/audio/fp30x-studio &amp;&amp; .venv/bin/python -m fp30x_studio.synth partials -p acoustic -n 69 -v 80</code>
+  <button data-c="cacoustic69">Copy</button></div>
+</div>
+<div class=card>
+  <div class=hd><h3>b2-darkbass &middot; note 28 <span class=dim>(E1)</span></h3>
+  <span class="badge ok">FFT agrees to 0.84%</span></div>
+  <p class=note>32 partials within 60 dB of the fundamental; worst disagreement between the
+  printed a<sub>n</sub> and the rendered audio is 0.84%.</p>
+  <table><thead><tr><th>n</th><th>f<sub>n</sub> Hz</th><th>a<sub>n</sub> before</th><th>a<sub>n</sub> after</th><th>change</th></tr></thead><tbody><tr><td>1</td><td>41.21</td><td class=dim>0.57726</td><td><b>0.29726</b></td><td class=down>0.51x</td></tr><tr><td>2</td><td>82.43</td><td class=dim>0.18621</td><td><b>0.18945</b></td><td class=same>1.02x</td></tr><tr><td>3</td><td>123.69</td><td class=dim>0.09171</td><td><b>0.13416</b></td><td class=up>1.46x</td></tr><tr><td>4</td><td>165.00</td><td class=dim>0.05265</td><td><b>0.09532</b></td><td class=up>1.81x</td></tr><tr><td>5</td><td>206.37</td><td class=dim>0.03226</td><td><b>0.06488</b></td><td class=up>2.01x</td></tr><tr><td>6</td><td>247.84</td><td class=dim>0.02017</td><td><b>0.04025</b></td><td class=up>2.00x</td></tr><tr><td>7</td><td>289.40</td><td class=dim>0.01246</td><td><b>0.02053</b></td><td class=up>1.65x</td></tr><tr><td>8</td><td>331.09</td><td class=dim>0.00734</td><td><b>0.00532</b></td><td class=down>0.72x</td></tr><tr><td>9</td><td>372.91</td><td class=dim>0.00387</td><td><b>0.00566</b></td><td class=up>1.46x</td></tr><tr><td>10</td><td>414.88</td><td class=dim>0.00153</td><td><b>0.01272</b></td><td class=up>8.31x</td></tr><tr><td>11</td><td>457.03</td><td class=dim>0.00001</td><td><b>0.01630</b></td><td class=up>1630.00x</td></tr><tr><td>12</td><td>499.35</td><td class=dim>0.00098</td><td><b>0.01695</b></td><td class=up>17.30x</td></tr><tr><td>13</td><td>541.89</td><td class=dim>0.00152</td><td><b>0.01531</b></td><td class=up>10.07x</td></tr><tr><td>14</td><td>584.64</td><td class=dim>0.00175</td><td><b>0.01208</b></td><td class=up>6.90x</td></tr><tr><td>15</td><td>627.62</td><td class=dim>0.00176</td><td><b>0.00796</b></td><td class=up>4.52x</td></tr><tr><td>16</td><td>670.86</td><td class=dim>0.00162</td><td><b>0.00359</b></td><td class=up>2.22x</td></tr></tbody></table><p class=dim>first 16 of 32 partials</p>
+  <div class=cmd><code id="cb2-darkbass28">cd ~/workspace/audio/fp30x-studio &amp;&amp; .venv/bin/python -m fp30x_studio.synth partials -p b2-darkbass -n 28 -v 80</code>
+  <button data-c="cb2-darkbass28">Copy</button></div>
+</div>
+<div class=card>
+  <div class=hd><h3>b2-darkbass &middot; note 33 <span class=dim>(A1)</span></h3>
+  <span class="badge ok">FFT agrees to 0.77%</span></div>
+  <p class=note>32 partials within 60 dB of the fundamental; worst disagreement between the
+  printed a<sub>n</sub> and the rendered audio is 0.77%.</p>
+  <table><thead><tr><th>n</th><th>f<sub>n</sub> Hz</th><th>a<sub>n</sub> before</th><th>a<sub>n</sub> after</th><th>change</th></tr></thead><tbody><tr><td>1</td><td>55.00</td><td class=dim>0.57726</td><td><b>0.33709</b></td><td class=down>0.58x</td></tr><tr><td>2</td><td>110.03</td><td class=dim>0.18621</td><td><b>0.19701</b></td><td class=same>1.06x</td></tr><tr><td>3</td><td>165.10</td><td class=dim>0.09171</td><td><b>0.13261</b></td><td class=up>1.45x</td></tr><tr><td>4</td><td>220.24</td><td class=dim>0.05265</td><td><b>0.09090</b></td><td class=up>1.73x</td></tr><tr><td>5</td><td>275.48</td><td class=dim>0.03226</td><td><b>0.06016</b></td><td class=up>1.86x</td></tr><tr><td>6</td><td>330.82</td><td class=dim>0.02017</td><td><b>0.03649</b></td><td class=up>1.81x</td></tr><tr><td>7</td><td>386.31</td><td class=dim>0.01246</td><td><b>0.01826</b></td><td class=up>1.47x</td></tr><tr><td>8</td><td>441.95</td><td class=dim>0.00734</td><td><b>0.00465</b></td><td class=down>0.63x</td></tr><tr><td>9</td><td>497.77</td><td class=dim>0.00387</td><td><b>0.00487</b></td><td class=up>1.26x</td></tr><tr><td>10</td><td>553.80</td><td class=dim>0.00153</td><td><b>0.01082</b></td><td class=up>7.07x</td></tr><tr><td>11</td><td>610.06</td><td class=dim>0.00001</td><td><b>0.01370</b></td><td class=up>1370.00x</td></tr><tr><td>12</td><td>666.56</td><td class=dim>0.00098</td><td><b>0.01409</b></td><td class=up>14.38x</td></tr><tr><td>13</td><td>723.33</td><td class=dim>0.00152</td><td><b>0.01260</b></td><td class=up>8.29x</td></tr><tr><td>14</td><td>780.40</td><td class=dim>0.00175</td><td><b>0.00985</b></td><td class=up>5.63x</td></tr><tr><td>15</td><td>837.77</td><td class=dim>0.00176</td><td><b>0.00643</b></td><td class=up>3.65x</td></tr><tr><td>16</td><td>895.49</td><td class=dim>0.00162</td><td><b>0.00288</b></td><td class=up>1.78x</td></tr></tbody></table><p class=dim>first 16 of 32 partials</p>
+  <div class=cmd><code id="cb2-darkbass33">cd ~/workspace/audio/fp30x-studio &amp;&amp; .venv/bin/python -m fp30x_studio.synth partials -p b2-darkbass -n 33 -v 80</code>
+  <button data-c="cb2-darkbass33">Copy</button></div>
+</div>
+<div class=card>
+  <div class=hd><h3>b2-darkbass &middot; note 45 <span class=dim>(A2)</span></h3>
+  <span class="badge ok">FFT agrees to 1.17%</span></div>
+  <p class=note>30 partials within 60 dB of the fundamental; worst disagreement between the
+  printed a<sub>n</sub> and the rendered audio is 1.17%.</p>
+  <table><thead><tr><th>n</th><th>f<sub>n</sub> Hz</th><th>a<sub>n</sub> before</th><th>a<sub>n</sub> after</th><th>change</th></tr></thead><tbody><tr><td>1</td><td>110.01</td><td class=dim>0.57726</td><td><b>0.43340</b></td><td class=down>0.75x</td></tr><tr><td>2</td><td>220.06</td><td class=dim>0.18621</td><td><b>0.20574</b></td><td class=same>1.10x</td></tr><tr><td>3</td><td>330.21</td><td class=dim>0.09171</td><td><b>0.12263</b></td><td class=up>1.34x</td></tr><tr><td>4</td><td>440.49</td><td class=dim>0.05265</td><td><b>0.07710</b></td><td class=up>1.46x</td></tr><tr><td>5</td><td>550.95</td><td class=dim>0.03226</td><td><b>0.04773</b></td><td class=up>1.48x</td></tr><tr><td>6</td><td>661.65</td><td class=dim>0.02017</td><td><b>0.02741</b></td><td class=up>1.36x</td></tr><tr><td>7</td><td>772.61</td><td class=dim>0.01246</td><td><b>0.01309</b></td><td class=same>1.05x</td></tr><tr><td>8</td><td>883.90</td><td class=dim>0.00734</td><td><b>0.00321</b></td><td class=down>0.44x</td></tr><tr><td>9</td><td>995.55</td><td class=dim>0.00387</td><td><b>0.00324</b></td><td class=down>0.84x</td></tr><tr><td>10</td><td>1107.60</td><td class=dim>0.00153</td><td><b>0.00697</b></td><td class=up>4.56x</td></tr><tr><td>11</td><td>1220.11</td><td class=dim>0.00001</td><td><b>0.00858</b></td><td class=up>858.00x</td></tr><tr><td>12</td><td>1333.12</td><td class=dim>0.00098</td><td><b>0.00859</b></td><td class=up>8.77x</td></tr><tr><td>13</td><td>1446.66</td><td class=dim>0.00152</td><td><b>0.00750</b></td><td class=up>4.93x</td></tr><tr><td>14</td><td>1560.79</td><td class=dim>0.00175</td><td><b>0.00574</b></td><td class=up>3.28x</td></tr><tr><td>15</td><td>1675.55</td><td class=dim>0.00176</td><td><b>0.00367</b></td><td class=up>2.09x</td></tr><tr><td>16</td><td>1790.97</td><td class=dim>0.00162</td><td><b>0.00161</b></td><td class=same>0.99x</td></tr></tbody></table><p class=dim>first 16 of 32 partials</p>
+  <div class=cmd><code id="cb2-darkbass45">cd ~/workspace/audio/fp30x-studio &amp;&amp; .venv/bin/python -m fp30x_studio.synth partials -p b2-darkbass -n 45 -v 80</code>
+  <button data-c="cb2-darkbass45">Copy</button></div>
+</div>
+<div class=card>
+  <div class=hd><h3>b2-darkbass &middot; note 69 <span class=dim>(A4)</span></h3>
+  <span class="badge ok">FFT agrees to 0.64%</span></div>
+  <p class=note>18 partials within 60 dB of the fundamental; worst disagreement between the
+  printed a<sub>n</sub> and the rendered audio is 0.64%.</p>
+  <table><thead><tr><th>n</th><th>f<sub>n</sub> Hz</th><th>a<sub>n</sub> before</th><th>a<sub>n</sub> after</th><th>change</th></tr></thead><tbody><tr><td>1</td><td>440.14</td><td class=dim>0.57726</td><td><b>0.60812</b></td><td class=same>1.05x</td></tr><tr><td>2</td><td>881.14</td><td class=dim>0.18621</td><td><b>0.19046</b></td><td class=same>1.02x</td></tr><tr><td>3</td><td>1323.84</td><td class=dim>0.09171</td><td><b>0.08901</b></td><td class=same>0.97x</td></tr><tr><td>4</td><td>1769.10</td><td class=dim>0.05265</td><td><b>0.04709</b></td><td class=same>0.89x</td></tr><tr><td>5</td><td>2217.74</td><td class=dim>0.03226</td><td><b>0.02550</b></td><td class=down>0.79x</td></tr><tr><td>6</td><td>2670.61</td><td class=dim>0.02017</td><td><b>0.01312</b></td><td class=down>0.65x</td></tr><tr><td>7</td><td>3128.50</td><td class=dim>0.01246</td><td><b>0.00572</b></td><td class=down>0.46x</td></tr><tr><td>8</td><td>3592.23</td><td class=dim>0.00734</td><td><b>0.00129</b></td><td class=down>0.18x</td></tr><tr><td>9</td><td>4062.57</td><td class=dim>0.00387</td><td><b>0.00122</b></td><td class=down>0.32x</td></tr><tr><td>10</td><td>4540.28</td><td class=dim>0.00153</td><td><b>0.00246</b></td><td class=up>1.61x</td></tr><tr><td>11</td><td>5026.11</td><td class=dim>0.00001</td><td><b>0.00285</b></td><td class=up>285.00x</td></tr><tr><td>12</td><td>5520.78</td><td class=dim>0.00098</td><td><b>0.00272</b></td><td class=up>2.78x</td></tr><tr><td>13</td><td>6024.98</td><td class=dim>0.00152</td><td><b>0.00226</b></td><td class=up>1.49x</td></tr><tr><td>14</td><td>6539.38</td><td class=dim>0.00175</td><td><b>0.00165</b></td><td class=same>0.94x</td></tr><tr><td>15</td><td>7064.64</td><td class=dim>0.00176</td><td><b>0.00101</b></td><td class=down>0.57x</td></tr><tr><td>16</td><td>7601.36</td><td class=dim>0.00162</td><td><b>0.00043</b></td><td class=down>0.27x</td></tr></tbody></table><p class=dim>first 16 of 32 partials</p>
+  <div class=cmd><code id="cb2-darkbass69">cd ~/workspace/audio/fp30x-studio &amp;&amp; .venv/bin/python -m fp30x_studio.synth partials -p b2-darkbass -n 69 -v 80</code>
+  <button data-c="cb2-darkbass69">Copy</button></div>
+</div>
+
+<h2>How the amplitudes were checked against the renderer</h2>
+<div class=card>
+<p class=note>Rendering each note through <b>render_string</b> with the pedal held and no damping, then
+reading partial peaks off a 2 s Hann-windowed FFT starting 250 ms after the strike. For each partial a
+single-sine reference was built <i>from the printed a<sub>n</sub></i> and pushed through the identical
+window and transform, so the analysis bias (Hann weighting of a decaying sinusoid) cancels rather than
+being modelled. A ratio of 1.000 means the printed number is the number in the audio.</p>
+<p class=note>unison_depth and hammer_noise were zeroed for the measurement only &mdash; a<sub>n</sub>
+does not depend on either, and both would smear the peak. Confirmed by a test that computes
+a<sub>n</sub> by the renderer's own route on five presets and five notes.</p>
+<table><thead><tr><th style="text-align:left">preset</th><th>note</th>
+<th>partials &gt;-60 dB</th><th>worst disagreement</th></tr></thead><tbody>
+<tr><td style="text-align:left">acoustic</td><td>28</td><td>32</td><td class=same>0.55%</td></tr><tr><td style="text-align:left">acoustic</td><td>33</td><td>32</td><td class=same>0.56%</td></tr><tr><td style="text-align:left">acoustic</td><td>45</td><td>32</td><td class=same>0.49%</td></tr><tr><td style="text-align:left">acoustic</td><td>69</td><td>18</td><td class=same>0.64%</td></tr><tr><td style="text-align:left">b2-darkbass</td><td>28</td><td>32</td><td class=same>0.84%</td></tr><tr><td style="text-align:left">b2-darkbass</td><td>33</td><td>32</td><td class=same>0.77%</td></tr><tr><td style="text-align:left">b2-darkbass</td><td>45</td><td>30</td><td class=same>1.17%</td></tr><tr><td style="text-align:left">b2-darkbass</td><td>69</td><td>18</td><td class=same>0.64%</td></tr>
+</tbody></table>
+<p class=note style="margin-top:12px">Partials below &minus;60 dB deviate by up to 4%. Those are the
+strike-point comb nulls at n = 8.44k, sitting 72&ndash;82 dB under the fundamental, where leakage from
+their loud neighbours sets the measurement floor. Not a model discrepancy. One cosmetic consequence: at
+note 69 a few null partials print as 0.00000, because the a<sub>n</sub> column carries five decimals
+&mdash; the dB column still shows them.</p>
+</div>
+
+<h2>The bass clank reproduces</h2>
+<div class=card>
+<div class=hd><h3>note 28, acoustic</h3><span class="badge ok">matches the 2026-09-05 trace</span></div>
+<p class=note>The comb nulls at n = 1/0.1185 = <b>8.44</b> and re-peaks above it. Partials 11&ndash;14
+land at <b>457.0, 499.4, 541.9, 584.6 Hz</b> &mdash; the 457&ndash;585 Hz band named in the b*/v* preset
+notes &mdash; and partial 12 comes back to 64% of the loudest partial in the series. The command now
+prints the comb's nulls outright and marks which rows the renderer actually sums, so the trace is one
+run rather than a script.</p>
+<div class=cmd><code id=clank>cd ~/workspace/audio/fp30x-studio &amp;&amp; .venv/bin/python -m fp30x_studio.synth partials -p acoustic -n 28 -v 80</code>
+<button data-c=clank>Copy</button></div>
+</div>
+
+<h2>One thing for you</h2>
+<div class=card>
+<div class=hd><h3>Paste this onto the Linear issue</h3><span class="badge you">You</span></div>
+<p class=note>No Linear tooling is loaded in this session, so I could not attach it myself. If there is
+no issue for the synth work yet, this text is the description.</p>
+<pre id=lin>Fixed: `synth partials` crashed, and had been printing the wrong spectrum before it crashed.
+
+**Artifact:** commit `875b4aa` on `fpx-format-spec`, ~/workspace/audio/fp30x-studio
+Files: `fp30x_studio/synth/cli.py`, `fp30x_studio/synth/model.py`, `tests/test_synth.py`
+
+**What was wrong.** The refactor that moved `hammer_strike_point` into the preset moved three
+other things with it. `cmd_partials` kept reading module-level defaults for all four. Only the
+strike point crashed (AttributeError); the other three were optional arguments, so they failed
+silently:
+
+| read from the module | should come from the preset |
+|---|---|
+| `HAMMER_STRIKE_POINT` (0.091) | `hammer_strike_point` (0.1185) |
+| rolloff, flat | `rolloff_per_octave` |
+| B defaults | `inharmonicity_decades_per_octave`, `inharmonicity_floor` |
+| halving 15.5 | `decay_halving_semitones` |
+
+`rolloff_at` is the largest per-register correction in the model, so ignoring
+`rolloff_per_octave` meant the printed `a_n` column was **identical for every note and every
+preset**, up to frequency. On note 28 it printed rolloff 3.018 where the renderer uses 0.821
+(acoustic) / 1.993 (b2-darkbass), and a fundamental of 0.577 where the true value is 0.043 —
+a 13.6x error, in the direction that hides the bass clank.
+
+**Verification (the 8 runs requested).** Each note rendered through `render_string`, partial
+peaks read off an FFT, compared against the printed `a_n` pushed through the identical
+window/transform so the analysis bias cancels:
+
+| preset | note | partials &gt;-60 dB | worst disagreement |
+|---|---|---|---|
+| acoustic | 28 | 32 | 0.55% |
+| acoustic | 33 | 32 | 0.56% |
+| acoustic | 45 | 32 | 0.49% |
+| acoustic | 69 | 18 | 0.64% |
+| b2-darkbass | 28 | 32 | 0.84% |
+| b2-darkbass | 33 | 32 | 0.77% |
+| b2-darkbass | 45 | 30 | 1.17% |
+| b2-darkbass | 69 | 18 | 0.64% |
+
+Partials below -60 dB deviate more (up to 4%): those are the strike-point comb nulls at
+n = 8.44k, 72-82 dB down, where spectral leakage from their neighbours sets the measurement
+floor. Not a model discrepancy.
+
+**The 2026-09-05 finding reproduces.** On note 28 the comb nulls at n = 8.44 and re-peaks
+above it; partials 11-14 land at 457.0, 499.4, 541.9, 584.6 Hz — the 457-585 Hz band named in
+the b*/v* preset notes — and partial 12 comes back to 64% of the loudest partial. The command
+now shows this directly: it prints the comb nulls and marks which rows the renderer sums.
+
+**Also fixed:** `radiation_gain` was left in `model.__all__` after the function was removed,
+so `from .model import *` raised AttributeError. Bell partial in the tine branch now honours
+the renderer&#x27;s Nyquist guard.
+
+**Tests:** 29 new tests in `tests/test_synth.py` pin the CLI/renderer agreement rather than
+the code. 27 of them fail against the previous `cli.py`. Full suite 397 passed.
+
+**Left alone, flagged:** the b*/v* presets in `synth/presets/` are still untracked (only
+`acoustic` and `electric` are committed), so the tests that use them skip on a clean checkout.
+The uncommitted `align/`, `performance.py` and `segment.py` changes in that tree are not mine
+and I did not touch them.
+
+-- written by Claude Code, on Jake&#x27;s machine</pre>
+<div class=cmd><span style="flex:1"></span><button data-c=lin>Copy the comment</button></div>
+</div>
+
+<div class=card>
+<div class=hd><h3>Two things I left alone, deliberately</h3><span class="badge you">Your call</span></div>
+<ul>
+<li>The <b>b*/v* presets are still untracked</b> &mdash; only acoustic and electric are committed. My
+tests skip rather than fail when they are absent, but on any other checkout the b2-darkbass coverage
+silently vanishes. They are your 2026-09-05 exploration; say the word and I will commit them.</li>
+<li><b>align/, performance.py, segment.py</b> have uncommitted changes that are not mine. Untouched.</li>
+</ul>
+</div>
+</main>
+<script>
+document.querySelectorAll('button[data-c]').forEach(function(b){
+  b.addEventListener('click',function(){
+    var t=document.getElementById(b.dataset.c).textContent;
+    var ok=function(){var o=b.textContent;b.textContent='Copied';setTimeout(function(){b.textContent=o},1500)};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,function(){fb(t,ok)})}
+    else{fb(t,ok)}
+  })
+});
+function fb(t,ok){var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(a);ok()}
+</script>
