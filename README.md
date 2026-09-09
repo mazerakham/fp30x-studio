@@ -239,6 +239,7 @@ Four dead ends, each of which looks like the right answer:
 | `fp30x_studio/rawcapture.py` | Reader for `.fp30x` files; `scan()` resumes from a byte offset. |
 | `fp30x_studio/pipeline/` | Incremental ingest, pairing with defect accounting, integrity, queries, CLI. |
 | `fp30x_studio/identify/` | Names the piece being played, live, from the note stream. |
+| `fp30x_studio/delta/` | A performance as the score plus a difference vector, and the cosine between two of them. |
 | `fp30x_studio/inspect_capture.py` | Byte-level census; reads `.mid`, `.json`, `.fp30x`. |
 | `fp30x_studio/figures.py` | Renders that object; `python -m fp30x_studio.figures`. |
 | `native/fp30x_capture.c` | Callback-driven CoreMIDI capture with driver timestamps. |

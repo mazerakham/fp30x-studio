@@ -23,10 +23,15 @@ Usage::
 
 The three properties this module is built to keep:
 
-**The discretisation is exact.** The Euler-Lagrange equation forces
-:math:`\varphi''=0` off the knots, so the minimiser is piecewise linear on the
-mesh of matched onsets. Solving over that mesh is not a numerical scheme, it is
-the answer.
+**The discretisation is exact** -- for the default smoothness term. The
+Euler-Lagrange equation forces :math:`\varphi''=0` off the knots, so the
+minimiser is piecewise linear on the mesh of matched onsets, and solving over
+that mesh is not a numerical scheme, it is the answer. The optional
+``smoothness="log-rate"`` term :math:`\int|\log\varphi'|^2` -- multiplicative,
+so twice as fast and half as fast cost the same -- is the better model of tempo
+and it **loses this property**: :mod:`.warp` derives why, and returns a local
+minimiser with the qualification attached rather than an exactness claim it
+cannot keep.
 
 **Monotonicity is a constraint, not a hope.** :math:`\varphi'\ge\delta>0` is
 imposed as a linear inequality and solved with an exact active-set QP whose KKT
@@ -34,24 +39,30 @@ residual is reported.
 
 **Nothing unmatched is discarded quietly.**
 :meth:`~.correspond.Correspondence.census` accounts for every onset event on
-both sides, matched or not.
+both sides, matched or not. That holds under affine gaps
+(``correspond(gap_extend=...)``, so one long cut need not cost what many short
+ones cost) and under mass-priced cuts
+(:func:`~.correspond.mass_weights`, so snipping the edge of a rest is nearly
+free because there is nothing there to destroy) exactly as it did before them.
 """
 
 from __future__ import annotations
 
-from .correspond import Correspondence, MatchedPair, correspond, event_distance
+from .correspond import (Correspondence, MatchedPair, correspond,
+                         event_distance, mass_weights)
 from .events import (CLUSTER_TOL_S, LATTICE_S, SEGMENT_GAP_S, Event, Segment,
                      cluster_onsets, load_segments)
 from .report import (DEFAULT_LAMBDAS, Alignment, align_segments,
                      l_curve_corner)
-from .warp import (Kink, SweepPoint, Warp, fit_warp, gcv_lambda,
-                   lambda_sweep, straight_line)
+from .warp import (CONVEX_SLOPE, SMOOTHNESS, Kink, SweepPoint, Warp,
+                   fit_warp, gcv_lambda, lambda_sweep, straight_line)
 
 __all__ = [
     "Event", "Segment", "load_segments", "cluster_onsets",
     "LATTICE_S", "CLUSTER_TOL_S", "SEGMENT_GAP_S",
     "Correspondence", "MatchedPair", "correspond", "event_distance",
+    "mass_weights",
     "Warp", "Kink", "SweepPoint", "fit_warp", "lambda_sweep", "straight_line",
-    "gcv_lambda", "l_curve_corner",
+    "gcv_lambda", "l_curve_corner", "SMOOTHNESS", "CONVEX_SLOPE",
     "Alignment", "align_segments", "DEFAULT_LAMBDAS",
 ]

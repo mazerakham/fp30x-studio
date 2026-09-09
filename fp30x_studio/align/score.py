@@ -81,9 +81,32 @@ class ScoreEvents:
         ]
 
 
+#: Publisher sigla used in the Humdrum Chopin First Editions filenames, from
+#: that repository's own README. The siglum is a token of the stem, so
+#: ``061-1-BR`` and ``062-1-BR-001`` both resolve to Brandus.
 EDITIONS = {
-    "BR": "Brandus, Paris 1846 — French first edition",
-    "BH": "Breitkopf und Härtel, Leipzig 1846 — German first edition",
+    "BH": "Breitkopf und Haertel, Leipzig",
+    "Sm": "Maurice Schlesinger, Paris",
+    "KI": "Fr. Kistner, Leipzig",
+    "Sam": "Ad. Mt. Schlesinger, Berlin",
+    "W": "Wessel and Co., London",
+    "C": "Ad. Catelin et Cie, Paris",
+    "BR": "Brandus et Cie, Paris",
+    "TR": "E. Troupenas et Cie, Paris",
+    "MEIf": "J. Meissonnier fils, Paris",
+    "LW": "Stanley Lucas, Weber and Co., London",
+    "G": "Gustaw Gebethner i Spolka, Warsaw",
+    "LE": "Henry Lemoine, Paris",
+    "ME": "Pietro Mechetti, Vienna",
+    "MEIj": "J. Meissonnier, Paris",
+    "HAc": "Charles Haslinger, Vienna",
+    "GE": "E. Gerard et Cie, Paris",
+    "COC": "Robert Cocks and Co., London",
+    "ST": "Stern et Cie, Berlin",
+    "HO": "Friedrich Hofmeister, Leipzig",
+    "WS": "Wessel and Stapleton, London",
+    "SCHU": "Schuberth und Comp., Hamburg",
+    "SCH": "B. Schott's Soehne, Mainz",
 }
 
 
@@ -139,7 +162,10 @@ def load_score(path: str | Path, *, qpm: float = DEFAULT_QPM,
                      for e in events)
 
     md = s.metadata
-    code = path.stem.split("-")[-1]
+    # The edition code is a token of the stem, not necessarily the last one:
+    # ``061-1-BR`` ends in it and ``062-1-BR-001`` does not.
+    code = next((t for t in path.stem.split("-") if t in EDITIONS),
+                path.stem.split("-")[-1])
     n_meas = max((m.number for p in s.parts
                   for m in p.getElementsByClass("Measure")), default=0)
     return ScoreEvents(

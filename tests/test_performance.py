@@ -310,6 +310,24 @@ def test_the_cumulative_polyline_is_exact_not_sampled():
     np.testing.assert_allclose(interp, exact, atol=1e-9)
 
 
+def test_the_cumulative_polyline_agrees_with_the_closed_form_at_the_breakpoints():
+    """``cumulative_curve`` integrates the jumps of ``f``; ``cumulative``
+    evaluates the closed form (5). They are two routes to the same number, and
+    only the first is fast enough for a whole session -- evaluating (5) at every
+    breakpoint is quadratic and takes minutes on a 33,000-strike take. The
+    awkward cases are the ones worth pinning: coincident endpoints, a degenerate
+    strike, and a re-strike of a key that is still ringing.
+    """
+    strikes = [Strike(0.0, 1.0, 40, 100), Strike(1.0, 2.0, 40, 90),
+               Strike(0.5, 0.5, 41, 70), Strike(0.5, 2.5, 42, 60),
+               Strike(2.5, 2.5, 42, 60)]
+    p = perf_from_strikes(strikes)
+    ts, fs = p.cumulative_curve()
+    exact = np.array([p.cumulative(float(t)) for t in ts])
+    np.testing.assert_allclose(fs, exact, atol=1e-12)
+    assert fs[-1] == pytest.approx(p.energy())
+
+
 def test_plateaus_are_exactly_the_silences():
     notes, _ = phrase()
     p = parse(notes)

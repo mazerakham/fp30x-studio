@@ -746,6 +746,12 @@ class Performance:
         polyline through these points *is* ``F``, with no sampling error.  The
         returned times are every interval endpoint, padded with ``t_start`` and
         ``t_end``.
+
+        Computed by accumulating the jumps of ``f`` on the mesh and integrating
+        the resulting step function, which is ``O(n log n)``.  Evaluating the
+        closed form (5) at every breakpoint instead is ``O(n^2)`` and takes
+        minutes on a full session; the two agree exactly, and
+        ``tests/test_performance.py`` holds them to it.
         """
         src = [self.tracks[key]] if key is not None else list(self.tracks)
         strikes = sorted(s for tr in src for s in tr)
@@ -754,9 +760,15 @@ class Performance:
             pts.add(s.t_on)
             pts.add(s.t_off)
         ts = np.array(sorted(pts), dtype=float)
-        fs = np.array([sum(s.velocity * max(0.0, min(t, s.t_off) - s.t_on)
-                           for s in strikes) for t in ts])
-        return ts, fs
+        if not strikes:
+            return ts, np.zeros_like(ts)
+        vel = np.array([float(s.velocity) for s in strikes])
+        jumps = np.zeros(len(ts))
+        # ts[0] <= every t_on, so F starts at zero and no strike opens before it.
+        np.add.at(jumps, np.searchsorted(ts, [s.t_on for s in strikes]), vel)
+        np.add.at(jumps, np.searchsorted(ts, [s.t_off for s in strikes]), -vel)
+        f = np.cumsum(jumps)[:-1]          # f on each [ts[k], ts[k+1])
+        return ts, np.concatenate([[0.0], np.cumsum(f * np.diff(ts))])
 
     def plateaus(self, key: int | None = None) -> list[tuple[float, float]]:
         """The maximal intervals of ``[t_start, t_end]`` on which ``F`` is constant.
