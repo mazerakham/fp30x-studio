@@ -184,12 +184,16 @@ def main(argv=None):
     ap.add_argument("path")
     ap.add_argument("--expect-sr", type=int, default=48000)
     ap.add_argument("--expect-seconds", type=float)
+    ap.add_argument("--seconds-tol", type=float,
+                    help="default 5%% of the expected length; pass a tight value "
+                         "when the expectation is the input to the encoder, "
+                         "where the only allowed difference is rounding")
     ap.add_argument("--expect-lufs", type=float, default=-18.0)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
     rep = check(a.path, expect_sr=a.expect_sr, expect_seconds=a.expect_seconds,
-                expect_lufs=a.expect_lufs)
+                seconds_tol=a.seconds_tol, expect_lufs=a.expect_lufs)
 
     if a.json:
         print(json.dumps({"ok": rep.ok, "path": rep.path,
