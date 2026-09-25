@@ -36,8 +36,7 @@ def build(name: str, *, jobs: int = 5) -> str:
              for pid in maps}
     cands = comp.candidates(maps)
     (out / "audio").mkdir(parents=True, exist_ok=True)
-
-    gain = _gain(next(iter(perfs.values())), out)
+    gain = _gain(perfs, cands, out)
 
     jobs_list = [(gi, c) for gi in sorted(cands) for c in cands[gi]]
 
@@ -95,7 +94,16 @@ def _slug(s: str) -> str:
     return s.replace("/", "-")
 
 
-def _gain(perf: Performance, out: Path) -> float:
+def _gain(perfs: dict[str, Performance], cands: dict, out: Path) -> float:
+    """One gain for every excerpt, probed on exactly the audio it will render.
+
+    One gain is the point -- two takes of the same four bars must differ in what
+    was played, not in how loud they were normalised. *Which* gain took three
+    goes. An arbitrary minute of one pass left clips at -0.40 dBTP; each pass's
+    loudest minute by velocity left two of fifty-eight over, because a velocity
+    sum is not a peak. So the probe now runs on every candidate window laid end
+    to end, which is the material itself and cannot be unrepresentative of it.
+    """
     cache = out / "gain.txt"
     if cache.exists():
         try:
@@ -103,8 +111,18 @@ def _gain(perf: Performance, out: Path) -> float:
         except ValueError:
             pass
     import tempfile
-    from .performance import synthesize_midi
-    strikes, pedal = slicekit.window(perf, perf.t_start, perf.t_start + 60)
+    from .performance import Strike, synthesize_midi
+
+    strikes: list[Strike] = []
+    pedal: list[tuple[float, float]] = []
+    clock = 0.0
+    for gi in sorted(cands):
+        for c in cands[gi]:
+            w, pd = slicekit.window(perfs[c.pass_id], max(0.0, c.t0 - PAD), c.t1 + PAD)
+            strikes += [Strike(clock + s.t_on, clock + s.t_off, s.key, s.velocity)
+                        for s in w]
+            pedal += [(clock + a, clock + b) for a, b in pd]
+            clock += c.duration + 2 * PAD
     with tempfile.TemporaryDirectory() as td:
         mid = Path(td) / "g.mid"
         synthesize_midi(strikes, pedal, mid)

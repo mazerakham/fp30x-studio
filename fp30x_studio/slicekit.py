@@ -46,8 +46,17 @@ def window(perf: Performance, t0: float, t1: float, *, tail: float = TAIL
     return strikes, pedal
 
 
+#: Sample-peak target for a probe. Everything here is encoded to AAC, and AAC's
+#: true peak on decode runs ABOVE the PCM sample peak, by 1.4 dB at the worst of
+#: the 58 Something Doing clips. So the target is set from that measurement
+#: rather than from the ceiling: -3.5 dBFS sample lands the worst case near
+#: -1.9 dBTP, inside the -1.0 dBTP gate with room to spare. Headroom is free
+#: here -- the loudness stage sets the final level.
+PROBE_TARGET = 0.668          # -3.5 dBFS
+
+
 def _gain_for(midi: Path) -> float:
-    """Probe at 0.1 and scale to -1 dBFS.
+    """Probe at 0.1 and scale to :data:`PROBE_TARGET`.
 
     Probing at 1.0 clips on the electric piano, and a clipped probe reports the
     clipping point rather than the signal, so the correction is wrong in an
@@ -69,7 +78,7 @@ def _gain_for(midi: Path) -> float:
             return 0.8
         d = np.frombuffer(raw, dtype="<i2").astype("float32") / 32768
         pk = float(abs(d).max())
-        return min(10.0, 0.1 * (0.89 / pk)) if pk > 1e-6 else 1.0
+        return min(10.0, 0.1 * (PROBE_TARGET / pk)) if pk > 1e-6 else 1.0
     finally:
         probe.unlink(missing_ok=True)
 
