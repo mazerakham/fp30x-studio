@@ -62,6 +62,12 @@ class Candidate:
     t0: float
     t1: float
     bars_matched: int = 0
+    run: int = 0
+
+    @property
+    def key(self) -> str:
+        """Identifies this offer: the take, and which run through the bars."""
+        return f"{self.pass_id}#{self.run}"
 
     @property
     def duration(self) -> float:
@@ -140,13 +146,16 @@ def occurrences(traj: Sequence[tuple[float, int]], group: Sequence[int],
     return found
 
 
-def candidates(maps: dict[str, dict], *, size: int = GROUP) -> dict[int, list[Candidate]]:
-    """Every pass's offer for every bar group, keyed by group index.
+def candidates(maps: dict[str, dict], *, size: int = GROUP,
+               per_pass: int = 3) -> dict[int, list[Candidate]]:
+    """Every offer for every bar group, keyed by group index.
 
-    One offer per pass: the occurrence covering the most bars, and among those
-    the one whose length is closest to what the other passes took for the same
-    music. A pass that ran the group twice is not two candidates -- it is one
-    take of that music, and the page has enough buttons already.
+    A map over a whole take holds *several* runs through the piece -- he plays
+    it three times in a sitting -- and those are different performances of the
+    same bars, so each is its own candidate rather than one winning on behalf of
+    the file it came from. At most ``per_pass`` runs per take per group, longest
+    match first, so a group that was practised twenty times does not produce
+    twenty buttons.
     """
     n = max(m["n_measures"] for m in maps.values())
     first = min(int(b) for m in maps.values() for b in m["bars"])
@@ -161,12 +170,12 @@ def candidates(maps: dict[str, dict], *, size: int = GROUP) -> dict[int, list[Ca
             continue
         spans = [b - a for occ in offers.values() for a, b, _ in occ]
         typical = sorted(spans)[len(spans) // 2]
-        row = []
+        row: list[Candidate] = []
         for pid, occ in offers.items():
-            best = max(occ, key=lambda o: (o[2], -abs((o[1] - o[0]) - typical)))
-            t0, t1, hits = best
-            row.append(Candidate(pid, gi, tuple(g), t0, t1, hits))
-        row.sort(key=lambda c: (-c.bars_matched, c.pass_id))
+            ranked = sorted(occ, key=lambda o: (-o[2], abs((o[1] - o[0]) - typical)))
+            for k, (t0, t1, hits) in enumerate(ranked[:per_pass]):
+                row.append(Candidate(pid, gi, tuple(g), t0, t1, hits, k))
+        row.sort(key=lambda c: (-c.bars_matched, c.pass_id, c.run))
         out[gi] = row
     return out
 
@@ -236,11 +245,26 @@ def assemble(chosen: Sequence[tuple[Candidate, Performance]], *,
     return strikes, pedal
 
 
-def load_maps(dir: str | Path, *, max_cost: float = 0.5) -> dict[str, dict]:
-    """Every accepted measure map in a directory, keyed by a short pass id."""
+def load_maps(dir: str | Path, *, min_accepted: int = 5,
+              min_bars: int = 12) -> dict[str, dict]:
+    """Every measure map in a directory that really contains the piece.
+
+    Judged on how much the map placed, not on ``cost_median``. A take that is
+    fifty minutes of assorted rags with one pass at this piece inside it has a
+    median cost near 0.73 -- the median is over the whole take and most of the
+    take is other music -- while being the best source on disk. Filtering on it
+    threw away `2026-09-23-compose-a`, which carries 79 of 87 bars.
+
+    What does separate signal from noise is the number of chunks the DTW was
+    willing to accept: the genuine sources accept 20 to 58, and a take with no
+    pass at the piece accepts zero or one.
+    """
     out = {}
     for f in sorted(Path(dir).expanduser().glob("*.json")):
+        if f.name == "summary.json":
+            continue
         d = json.loads(f.read_text())
-        if (d.get("cost_median") or 9) < max_cost:
+        if (d.get("chunks_accepted", 0) >= min_accepted
+                and d.get("mapped_measures", 0) >= min_bars):
             out[f.stem.replace("sweep-", "")] = d
     return out

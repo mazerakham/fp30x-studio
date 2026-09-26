@@ -32,8 +32,10 @@ def build(name: str, *, jobs: int = 5) -> str:
     maps = comp.load_maps(out / "measuremaps")
     if not maps:
         raise SystemExit(f"no accepted measure maps under {out/'measuremaps'}")
-    perfs = {pid: Performance.from_raw_capture(CLIPS / f"sweep-{pid}.fp30")
-             for pid in maps}
+    # The map records the file it was built from, so a map may come from a
+    # whole take, a clip, or a sweep segment without the page caring which.
+    perfs = {pid: Performance.from_raw_capture(_source(m))
+             for pid, m in maps.items()}
     cands = comp.candidates(maps)
     (out / "audio").mkdir(parents=True, exist_ok=True)
     gain = _gain(perfs, cands, out)
@@ -42,7 +44,7 @@ def build(name: str, *, jobs: int = 5) -> str:
 
     def one(job):
         gi, c = job
-        dest = out / "audio" / f"g{gi:02d}-{_slug(c.pass_id)}.m4a"
+        dest = out / "audio" / f"g{gi:02d}-{_slug(c.key)}.m4a"
         if dest.exists() and dest.stat().st_size > 0:
             return dest
         return slicekit.clip(perfs[c.pass_id], max(0.0, c.t0 - PAD),
@@ -65,10 +67,10 @@ def build(name: str, *, jobs: int = 5) -> str:
             {"i": gi,
              "bars": list(cands[gi][0].bars),
              "candidates": [
-                 {"pass": c.pass_id, "t0": round(c.t0, 2), "t1": round(c.t1, 2),
+                 {"pass": c.key, "take": c.pass_id, "t0": round(c.t0, 2), "t1": round(c.t1, 2),
                   "dur": round(c.duration, 2), "spb": round(c.seconds_per_bar, 2),
                   "matched": c.bars_matched,
-                  "audio": f"audio/g{gi:02d}-{_slug(c.pass_id)}.m4a"}
+                  "audio": f"audio/g{gi:02d}-{_slug(c.key)}.m4a"}
                  for c in cands[gi]]}
             for gi in sorted(cands)],
         "auto": (json.loads((out / "selection-auto.json").read_text())["chosen"]
@@ -90,8 +92,18 @@ def build(name: str, *, jobs: int = 5) -> str:
     return f"http://127.0.0.1:8777/comp-{name}/comp.html"
 
 
+def _source(m: dict) -> Path:
+    p = Path(m["take"]).expanduser()
+    if p.exists():
+        return p
+    alt = CLIPS / p.name
+    if alt.exists():
+        return alt
+    raise SystemExit(f"the take this map was built from is gone: {p}")
+
+
 def _slug(s: str) -> str:
-    return s.replace("/", "-")
+    return s.replace("/", "-").replace("#", "-r")
 
 
 def _gain(perfs: dict[str, Performance], cands: dict, out: Path) -> float:
