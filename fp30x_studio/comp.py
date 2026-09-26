@@ -45,6 +45,13 @@ from .performance import Performance, Strike
 #: of decisions near twenty, which is a sitting rather than a project.
 GROUP = 4
 
+#: Within one run through a group, no step between consecutive mapped bars may
+#: exceed this multiple of that run's median step. A whole-take map holds every
+#: visit to a bar, so without this a run can be assembled from bar 0 of one pass
+#: and bars 1-3 of a pass ninety seconds later -- which is not a performance of
+#: those bars and was offered as one.
+MAX_STEP_RATIO = 3.0
+
 #: A seam may fall this far from the nominal bar line, to reach a moment where
 #: nothing is sounding.
 SEAM_SEARCH = 0.45
@@ -126,13 +133,15 @@ def occurrences(traj: Sequence[tuple[float, int]], group: Sequence[int],
                 k += 1                      # this bar was not mapped; skip it
             else:
                 break                       # went backwards: a different pass
+        steps = [b[0] - a[0] for a, b in zip(hits, hits[1:])]
+        steps = [x for x in steps if x > 0]
+        bar_dur = sorted(steps)[len(steps) // 2] if steps else 1.0
+        contiguous = not steps or max(steps) <= MAX_STEP_RATIO * bar_dur
         ok = (len(hits) >= max(2, int(min_fraction * len(want)))
-              and hits and hits[-1][1] == want[-1])
+              and hits and hits[-1][1] == want[-1]
+              and contiguous)
         if ok:
             t0 = hits[0][0]
-            steps = [b[0] - a[0] for a, b in zip(hits, hits[1:])]
-            steps = [x for x in steps if x > 0]
-            bar_dur = sorted(steps)[len(steps) // 2] if steps else 1.0
             t_last = hits[-1][0]
             t1 = t_last + bar_dur
             nxt = next((t for t, b in traj

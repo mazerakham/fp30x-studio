@@ -128,7 +128,8 @@ def test_every_group_offers_a_candidate(maps):
     assert c
     for gi, row in c.items():
         assert row, f"group {gi} has no candidate"
-        assert len({x.pass_id for x in row}) == len(row), "a pass offered twice"
+        assert len({x.key for x in row}) == len(row), "the same run offered twice"
+        assert all(x.run < 3 for x in row), "a pass offered more than three runs"
 
 
 def test_no_candidate_swallows_a_hesitation(maps):
@@ -154,12 +155,18 @@ def test_no_candidate_swallows_a_hesitation(maps):
                 f"spaced {spacing:.1f}s")
 
 
+def _source(m):
+    """A map records the file it was built from; it may be a take or a clip."""
+    p = Path(m["take"]).expanduser()
+    return p if p.exists() else CLIPS / p.name
+
+
 def test_assembling_every_group_uses_each_note_once(maps):
     from fp30x_studio.performance import Performance as P
     cands = comp.candidates(maps)
-    perfs = {pid: P.from_raw_capture(CLIPS / f"sweep-{pid}.fp30") for pid in maps}
-    if not all((CLIPS / f"sweep-{pid}.fp30").exists() for pid in maps):
-        pytest.skip("sweep clips not on this machine")
+    if not all(_source(m).exists() for m in maps.values()):
+        pytest.skip("the takes these maps were built from are not on this machine")
+    perfs = {pid: P.from_raw_capture(_source(m)) for pid, m in maps.items()}
     chosen = [cands[gi][0] for gi in sorted(cands)]
     strikes, pedal = comp.assemble([(c, perfs[c.pass_id]) for c in chosen])
     assert strikes and pedal
