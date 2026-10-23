@@ -266,7 +266,11 @@ def meta_from_music21(score, path: Path, source) -> WorkMeta:
         m.title = path.stem
 
     m.opus = opus_from_text(m.title) or opus_from_text(m.parent_title)
-    if not m.opus and number and str(number).isdigit():
+    # In an ABC file the number is the tune's X: index within its collection,
+    # not an opus. Minting "Op. 414" from it made anonymous reels read as
+    # catalogued works (JPA-150 audit: 12,581 such rows).
+    if (not m.opus and number and str(number).isdigit()
+            and path.suffix.lower() != ".abc"):
         m.opus = norm_opus(str(number))
     m.catalogue = catalogue_from_text(m.title) or catalogue_from_text(m.parent_title)
     m.licence = _clean(allmd.get("copyright", ""))
