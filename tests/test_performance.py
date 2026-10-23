@@ -540,6 +540,23 @@ def test_the_figure_renders_to_a_png(tmp_path):
     assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
+def test_half_pedal_values_are_counted_not_silently_flattened():
+    """CC64 in 1..63 is flattened to 'up' by the model; the report must say so (JPA-195)."""
+    import mido
+    msgs = [(0.0, mido.Message("note_on", note=C4, velocity=80)),
+            (0.1, mido.Message("control_change", control=64, value=127)),
+            (0.2, mido.Message("control_change", control=64, value=40)),
+            (0.3, mido.Message("control_change", control=64, value=3)),
+            (0.4, mido.Message("control_change", control=64, value=0)),
+            (0.5, mido.Message("note_off", note=C4, velocity=64))]
+    p = Performance.from_messages(msgs)
+    assert p.report.pedal_events == 4
+    assert p.report.pedal_half_events == 2
+    assert "2 half-pedal values flattened to up (50.0% of pedal events)" in p.report.summary()
+    # full-travel pedalling produces no such line
+    assert "half-pedal" not in parse([(C4, 0.0, 0.2, 80)], [(0.1, 1.5)]).report.summary()
+
+
 # --------------------------------------------------------------------------
 # inspect_capture: the byte-level census
 # --------------------------------------------------------------------------

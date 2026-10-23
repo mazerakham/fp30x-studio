@@ -381,6 +381,10 @@ class ParseReport:
     degenerate: int = 0
     out_of_range: int = 0
     pedal_events: int = 0
+    # CC64 values in 1..63: half-pedal positions. The model below thresholds
+    # at 64, so these are flattened to "up". Counted so the loss is visible:
+    # on Jake's takes it is about 27% of all pedal messages (JPA-195).
+    pedal_half_events: int = 0
     pedal_unclosed: int = 0
     warnings: list[str] = field(default_factory=list)
 
@@ -395,6 +399,10 @@ class ParseReport:
         bits = [f"{self.n_messages} messages",
                 f"{self.n_strikes} strikes",
                 f"{self.pedal_events} pedal events"]
+        if self.pedal_half_events:
+            pct = 100.0 * self.pedal_half_events / max(self.pedal_events, 1)
+            bits.append(f"{self.pedal_half_events} half-pedal values flattened "
+                        f"to up ({pct:.1f}% of pedal events)")
         for label, n in (("orphan note-on", self.orphan_note_on),
                          ("orphan note-off", self.orphan_note_off),
                          ("retrigger truncation", self.retrigger_truncated),
@@ -528,6 +536,8 @@ class Performance:
                     close(k, t)
             elif mtype == "control_change" and msg.control == SUSTAIN_CC:
                 report.pedal_events += 1
+                if 0 < msg.value < 64:
+                    report.pedal_half_events += 1
                 down = msg.value >= 64
                 if down and pedal_down is None:
                     pedal_down = t
