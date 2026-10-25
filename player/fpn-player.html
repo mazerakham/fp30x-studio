@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sketch player</title>
+<style>
+:root{--bg:#faf8f4;--fg:#1d1b18;--mut:#6b655c;--card:#fff;--line:#d9d3c8;--staff:#8a8378;--acc:#2f5d8a;--sel:#c2410c;--head:#1d1b18}
+@media (prefers-color-scheme:dark){:root{--bg:#171614;--fg:#ece8e1;--mut:#a29b90;--card:#211f1c;--line:#3a3631;--staff:#6f685e;--acc:#86b2dd;--sel:#f08a4b;--head:#ece8e1}}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 -apple-system,system-ui,sans-serif;margin:0;padding:14px 16px 24px}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+h1{font-size:18px;margin:0 12px 0 0;font-weight:650}
+button{font:inherit;font-size:14px;padding:5px 11px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button:hover:not(:disabled){border-color:var(--acc)}button:disabled{opacity:.45;cursor:default}
+button.primary{border-color:var(--acc);color:var(--acc);font-weight:600}
+input[type=number]{font:inherit;font-size:14px;width:58px;padding:4px 6px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.grp{display:flex;gap:6px;align-items:center;padding-left:10px;border-left:1px solid var(--line)}
+#time{font-family:ui-monospace,Menlo,monospace;font-size:14px;min-width:120px}
+#wrap{position:relative;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+canvas{display:block;width:100%;height:min(62vh,560px);cursor:crosshair}
+#info{min-height:22px;margin:8px 2px 0;color:var(--mut);font-size:14px}
+#info b{color:var(--fg)}
+#log{margin-top:12px;font-size:14px}
+#log ol{margin:6px 0 0;padding-left:22px;color:var(--mut)}
+#banner{display:none;background:var(--card);border:1px solid var(--sel);border-radius:8px;padding:8px 12px;margin-bottom:10px}
+.keys{color:var(--mut);font-size:13px;margin-top:14px}
+kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--card)}
+#drop{display:none;position:fixed;inset:0;background:rgba(47,93,138,.15);border:3px dashed var(--acc);z-index:9}
+</style></head><body>
+<div id="banner"></div>
+<header>
+  <h1 id="title">Sketch player</h1>
+  <button id="open">Open…</button><button id="save" disabled>Save</button>
+  <div class="grp"><button id="play" class="primary" disabled>Play</button><span id="time">0:00.0</span></div>
+  <div class="grp"><button id="del" disabled>Delete</button><button id="undo" disabled>Undo</button></div>
+  <div class="grp">Speed up stretch ×<input id="k" type="number" value="2" min="0.25" max="16" step="0.25"><button id="speed" disabled>Apply</button></div>
+  <div class="grp"><button id="zout">−</button><button id="zin">+</button></div>
+</header>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="info">Open a .fpn sketch, or drop one here.</div>
+<div id="log"></div>
+<div class="keys"><kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> or scroll to move · drag the top strip to seek · click a note to hear it and select it · <kbd>⇧</kbd>-click adds · drag across the staff to select a stretch · <kbd>⌫</kbd> delete · <kbd>L</kbd> loop the stretch · <kbd>⌘Z</kbd> undo · <kbd>⌘S</kbd> save · <kbd>+</kbd><kbd>−</kbd> zoom</div>
+<div id="drop"></div>
+<script>
+"use strict";
+// ---------------------------------------------------------------- the document
+// Same semantics as fp30x_studio/fpn.py: notes and pedal are never rewritten,
+// edits are applied in order. Keep the two implementations in step.
+let doc=null, notes=[], pedal=[], handle=null, fileName="sketch.fpn", dirty=false;
+let pedalDown=[]; // [start,end] intervals, after edits
+function warp(t,a,b,k){return t<a?t:t<b?a+(t-a)/k:a+(b-a)/k+(t-b)}
+function apply(){
+  let N=doc.notes.map(n=>n.slice()), P=(doc.pedal||[]).map(p=>p.slice());
+  for(const e of doc.edits||[]){
+    if(e.op==="delete"){const g=new Set(e.ids);N=N.filter(n=>!g.has(n[0]))}
+    else if(e.op==="speed"){for(const n of N){const on=warp(n[1],e.a,e.b,e.k),off=warp(n[1]+n[2],e.a,e.b,e.k);n[1]=on;n[2]=Math.max(off-on,.01)}
+      for(const p of P)p[0]=warp(p[0],e.a,e.b,e.k)}
+  }
+  N.sort((x,y)=>x[1]-y[1]||x[3]-y[3]);notes=N;pedal=P;
+  pedalDown=[];let s=null;for(const [t,v] of P){if(v>=64&&s===null)s=t;else if(v<64&&s!==null){pedalDown.push([s,t]);s=null}}
+  if(s!==null)pedalDown.push([s,1e9]);
+  spell();
+}
+function total(){let e=0;for(const n of notes)e=Math.max(e,n[1]+n[2]);return e}
+function releaseAt(t){for(const [a,b] of pedalDown)if(t>=a&&t<b)return b;return t}
+
+// ---------------------------------------------------------------- spelling
+// Pick the major key whose scale holds the most sounding time, and spell
+// accidentals with its sharps or flats. Proportional notation: no key
+// signature, every accidental written.
+const SH=[[0,""],[0,"♯"],[1,""],[1,"♯"],[2,""],[3,""],[3,"♯"],[4,""],[4,"♯"],[5,""],[5,"♯"],[6,""]];
+const FL=[[0,""],[1,"♭"],[1,""],[2,"♭"],[2,""],[3,""],[4,"♭"],[4,""],[5,"♭"],[5,""],[6,"♭"],[6,""]];
+const NAMES="CDEFGAB";let table=SH,keyName="";
+function spell(){const w=new Array(12).fill(0);for(const n of notes)w[n[3]%12]+=n[2];
+  const maj=[0,2,4,5,7,9,11];let best=0,bs=-1;
+  for(let k=0;k<12;k++){const s=maj.reduce((a,i)=>a+w[(k+i)%12],0);if(s>bs){bs=s;best=k}}
+  const flatKeys=new Set([5,10,3,8,1,6]);table=flatKeys.has(best)?FL:SH;keyName=(table===FL?FL:SH)[best][1]?NAMES[table[best][0]]+table[best][1]:NAMES[table[best][0]]}
+function step(p){const [l]=table[p%12];return Math.floor(p/12-1)*7+l} // C4 -> 28
+function label(p){const [l,a]=table[p%12];return NAMES[l]+a+(Math.floor(p/12)-1)}
+
+// ---------------------------------------------------------------- view
+const cv=document.getElementById("c"),g=cv.getContext("2d");
+let W=0,H=0,dpr=1,now=0,pps=110,h=6,yC4=0,sel=new Set(),band=null,loop=false,hover=null;
+const RULER=22,PEDAL=18,X0F=.22;
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function resize(){dpr=devicePixelRatio||1;W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;g.setTransform(dpr,0,0,dpr,0,0);
+  let lo=16,hi=40;for(const n of notes){const s=step(n[3]);if(s<lo)lo=s;if(s>hi)hi=s}
+  h=Math.max(3,Math.min(9,(H-RULER-PEDAL-28)/(hi-lo+2)));const mid=(RULER+12+H-PEDAL-12)/2;yC4=mid+((hi+lo)/2-28)*h;draw()}
+const X0=()=>W*X0F, px=t=>X0()+(t-now)*pps, tx=x=>now+(x-X0())/pps, ys=s=>yC4-(s-28)*h;
+function mmss(t,d=1){t=Math.max(0,t);const m=Math.floor(t/60),s=t-m*60;return m+":"+(s<10?"0":"")+s.toFixed(d)}
+function draw(){
+  if(!W)return;const C={fg:css("--fg"),mut:css("--mut"),line:css("--line"),staff:css("--staff"),acc:css("--acc"),sel:css("--sel"),head:css("--head"),card:css("--card")};
+  g.clearRect(0,0,W,H);
+  // ruler
+  g.fillStyle=C.mut;g.font="11px -apple-system,system-ui";g.strokeStyle=C.line;g.lineWidth=1;
+  const t0=tx(0),t1=tx(W),stepS=pps>200?1:pps>60?5:pps>25?10:30;
+  for(let t=Math.ceil(t0/stepS)*stepS;t<t1;t+=stepS){if(t<0)continue;const x=px(t);g.beginPath();g.moveTo(x,RULER-6);g.lineTo(x,RULER);g.stroke();g.fillText(mmss(t,0),x+3,RULER-8)}
+  g.beginPath();g.moveTo(0,RULER+.5);g.lineTo(W,RULER+.5);g.stroke();
+  // band (selected stretch)
+  if(band){g.fillStyle=C.acc;g.globalAlpha=.10;g.fillRect(px(band[0]),RULER,px(band[1])-px(band[0]),H-RULER);g.globalAlpha=1;
+    if(loop){g.fillStyle=C.acc;g.fillText("loop",px(band[0])+4,RULER+12)}}
+  // staves
+  g.strokeStyle=C.staff;g.lineWidth=1;
+  for(const s of [18,20,22,24,26,30,32,34,36,38]){const y=Math.round(ys(s))+.5;g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
+  g.fillStyle=C.staff;g.font=`${h*7.2}px serif`;g.fillText("𝄞",4,ys(31)+h*1.6);g.font=`${h*3.8}px serif`;g.fillText("𝄢",6,ys(24)+h*1.4);
+  // pedal
+  const py=H-PEDAL+4;g.fillStyle=C.mut;
+  for(const [a,b] of pedalDown){const xa=px(a),xb=px(Math.min(b,total()));if(xb<0||xa>W)continue;g.globalAlpha=.35;g.fillRect(xa,py,Math.max(1,xb-xa),5);g.globalAlpha=1}
+  // notes
+  const rx=h*1.2,ry=h*.86;
+  for(const n of notes){const [id,t,d,p,v]=n;const x=px(t),xe=px(t+d);if(xe<-20)continue;if(x>W+20)break;
+    const s=step(p),y=ys(s),treble=p>=60,isSel=sel.has(id);const col=isSel?C.sel:C.head;
+    // ledger lines
+    g.strokeStyle=C.staff;g.lineWidth=1;
+    const led=[];if(treble){for(let k=40;k<=s;k+=2)led.push(k);for(let k=28;k>=s&&k<30;k-=2)led.push(k)}
+    else{for(let k=16;k>=s;k-=2)led.push(k);if(s>=28)led.push(28)}
+    for(const k of led){const yy=Math.round(ys(k))+.5;g.beginPath();g.moveTo(x-rx*1.6,yy);g.lineTo(x+rx*1.6,yy);g.stroke()}
+    // held length
+    g.fillStyle=col;g.globalAlpha=isSel?.35:.16;g.fillRect(x,y-ry*.55,Math.max(0,xe-x),ry*1.1);
+    // head
+    g.globalAlpha=isSel?1:.4+.6*v/127;g.beginPath();g.ellipse(x,y,rx,ry,-.35,0,7);g.fill();
+    const acc=table[p%12][1];if(acc){g.font=`${h*2.6}px -apple-system,system-ui`;g.fillText(acc,x-rx*2.9,y+h*.9)}
+    g.globalAlpha=1}
+  // playhead
+  g.strokeStyle=C.sel;g.lineWidth=2;g.beginPath();g.moveTo(X0(),RULER);g.lineTo(X0(),H);g.stroke();
+  if(drag&&drag.kind==="band"&&drag.moved){g.strokeStyle=C.acc;g.lineWidth=1;g.setLineDash([4,3]);g.strokeRect(drag.x0,drag.y0,drag.x1-drag.x0,drag.y1-drag.y0);g.setLineDash([])}
+  document.getElementById("time").textContent=mmss(now)+" / "+mmss(total(),0);
+}
+
+// ---------------------------------------------------------------- audio
+let ctx=null,master=null,buffers={},loading=null,playing=false,voices=[],t0ctx=0,t0song=0,nextIdx=0,timer=null;
+const LAYERS={p:45,f:100};
+function audio(){if(ctx)return;ctx=new AudioContext();const comp=ctx.createDynamicsCompressor();comp.threshold.value=-14;comp.ratio.value=3;
+  master=ctx.createGain();master.gain.value=2.2;const dry=ctx.createGain(),wet=ctx.createGain();wet.gain.value=.22;
+  const conv=ctx.createConvolver();const len=ctx.sampleRate*2.4,ir=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let c=0;c<2;c++){const d=ir.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3.2)}
+  conv.buffer=ir;master.connect(dry);master.connect(conv);conv.connect(wet);dry.connect(comp);wet.connect(comp);comp.connect(ctx.destination)}
+function loadPiano(){if(loading)return loading;audio();const jobs=[];
+  for(let p=21;p<109;p+=3)for(const L in LAYERS)jobs.push(fetch(`samples/${p}${L}.mp3`).then(r=>{if(!r.ok)throw Error(r.status);return r.arrayBuffer()}).then(b=>ctx.decodeAudioData(b)).then(b=>buffers[p+L]=b));
+  info("Loading the piano…");loading=Promise.all(jobs).then(()=>info(""),e=>{info("Piano samples failed to load ("+e.message+"). Run player/make_samples.py.");throw e});return loading}
+function voice(p,v,when,end){const L=v<72?"p":"f";const base=21+Math.round((p-21)/3)*3;const b=buffers[Math.min(108,Math.max(21,base))+L];if(!b)return;
+  const src=ctx.createBufferSource();src.buffer=b;src.playbackRate.value=Math.pow(2,(p-base)/12);
+  const gn=ctx.createGain();gn.gain.value=Math.min(1.8,v/LAYERS[L])*.5;src.connect(gn);gn.connect(master);
+  src.start(when);const stop=Math.min(end,when+6.5);gn.gain.setTargetAtTime(0,stop,.07);src.stop(stop+.6);voices.push(src);src.onended=()=>{voices=voices.filter(x=>x!==src)}}
+function songNow(){return t0song+(ctx.currentTime-t0ctx)}
+async function play(){if(!doc)return;await loadPiano();await ctx.resume();
+  if(loop&&band&&(now<band[0]||now>=band[1]))now=band[0];
+  playing=true;t0ctx=ctx.currentTime+.08;t0song=now;nextIdx=notes.findIndex(n=>n[1]>=now);if(nextIdx<0)nextIdx=notes.length;
+  timer=setInterval(schedule,25);schedule();btn.play.textContent="Pause";requestAnimationFrame(frame)}
+function pause(){playing=false;clearInterval(timer);for(const v of voices){try{v.stop()}catch(e){}}voices=[];btn.play.textContent="Play";draw()}
+function schedule(){const ahead=songNow()+.2;
+  while(nextIdx<notes.length&&notes[nextIdx][1]<ahead){const [id,t,d,p,v]=notes[nextIdx];
+    if(!(loop&&band&&t>=band[1])){const when=t0ctx+(t-t0song);voice(p,v,Math.max(when,ctx.currentTime),t0ctx+(releaseAt(t+d)-t0song))}nextIdx++}}
+function frame(){if(!playing)return;now=songNow();
+  if(loop&&band&&now>=band[1]){pause();now=band[0];play();return}
+  if(now>total()+1.5){pause();return}draw();requestAnimationFrame(frame)}
+function audition(n){loadPiano().then(()=>{ctx.resume();voice(n[3],n[4],ctx.currentTime+.01,ctx.currentTime+Math.min(1.2,n[2]+.2))})}
+
+// ---------------------------------------------------------------- editing
+function edit(e){doc.edits=doc.edits||[];doc.edits.push(e);afterEdit()}
+function afterEdit(){const was=playing;if(was)pause();apply();dirty=true;autosave();refresh();draw();if(was)play()}
+function delSel(){if(!sel.size)return;edit({op:"delete",ids:[...sel]});info(`Deleted ${sel.size} note${sel.size>1?"s":""}.`);sel.clear()}
+function undo(){if(!doc||!doc.edits||!doc.edits.length)return;const e=doc.edits.pop();afterEdit();info("Undid: "+describe(e)+".")}
+function stretch(){if(band)return band;if(!sel.size)return null;const S=notes.filter(n=>sel.has(n[0]));
+  return [Math.min(...S.map(n=>n[1])),Math.max(...S.map(n=>n[1]+n[2]))]}
+function speedUp(){const r=stretch(),k=parseFloat(document.getElementById("k").value);if(!r||!(k>0))return;
+  const [a,b]=r;edit({op:"speed",a:+a.toFixed(4),b:+b.toFixed(4),k});band=[a,a+(b-a)/k];info(`Played ${mmss(a)} to ${mmss(b)} at ${k}× speed.`)}
+function describe(e){return e.op==="delete"?`deleted ${e.ids.length} note${e.ids.length>1?"s":""}`:`${e.k}× speed from ${mmss(e.a)} to ${mmss(e.b)}`}
+function refresh(){const has=!!doc;btn.play.disabled=!has;btn.save.disabled=!has;btn.del.disabled=!sel.size;btn.undo.disabled=!(has&&doc.edits&&doc.edits.length);
+  btn.speed.disabled=!(band||sel.size);
+  document.getElementById("title").textContent=(doc?doc.title||fileName:"Sketch player")+(dirty?" •":"");document.title=(dirty?"• ":"")+(doc?doc.title:"Sketch player");
+  const L=document.getElementById("log");if(!doc){L.innerHTML="";return}
+  const E=doc.edits||[];L.innerHTML=`<b>${doc.notes.length} notes played</b>, ${notes.length} in the sketch now${keyName?`, spelled for ${keyName} major`:""}. `+(E.length?`Edits, in order:<ol>${E.map(e=>`<li>${describe(e)}</li>`).join("")}</ol>`:"No edits yet.")}
+function info(s){document.getElementById("info").innerHTML=s}
+
+// ---------------------------------------------------------------- pointer
+let drag=null;
+function hit(x,y){const rx=h*1.4;let best=null,bd=1e9;for(const n of notes){const nx=px(n[1]);if(nx<x-60)continue;if(nx>x+rx)break;
+  const ny=ys(step(n[3])),inBar=x>=nx&&x<=px(n[1]+n[2]);const dx=inBar?0:x-nx,dy=y-ny,d=dx*dx+dy*dy;if(Math.abs(dy)<h*1.1&&(Math.abs(dx)<rx||inBar)&&d<bd){bd=d;best=n}}return best}
+function rel(e){const r=cv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top]}
+cv.addEventListener("pointerdown",e=>{if(!doc)return;const [x,y]=rel(e);cv.setPointerCapture(e.pointerId);
+  if(y<RULER){drag={kind:"seek"};seek(x);return}
+  drag={kind:"band",x0:x,y0:y,x1:x,y1:y,moved:false,shift:e.shiftKey}});
+cv.addEventListener("pointermove",e=>{if(!drag)return;const [x,y]=rel(e);
+  if(drag.kind==="seek"){seek(x);return}
+  drag.x1=x;drag.y1=y;if(Math.abs(x-drag.x0)+Math.abs(y-drag.y0)>5)drag.moved=true;draw()});
+cv.addEventListener("pointerup",e=>{if(!drag)return;const d=drag;drag=null;if(d.kind==="seek")return;
+  if(!d.moved){const n=hit(d.x0,d.y0);if(!d.shift)sel.clear();
+    if(n){if(d.shift&&sel.has(n[0]))sel.delete(n[0]);else sel.add(n[0]);audition(n);
+      info(`<b>${label(n[3])}</b> · velocity ${n[4]} · at ${mmss(n[1],2)} · held ${n[2].toFixed(2)} s`+(sel.size>1?` · ${sel.size} selected`:""))}
+    else{band=null;loop=false;info("")}
+    refresh();draw();return}
+  // a stretch: every note whose head is inside the box
+  const ta=tx(Math.min(d.x0,d.x1)),tb=tx(Math.max(d.x0,d.x1)),ya=Math.min(d.y0,d.y1),yb=Math.max(d.y0,d.y1);
+  if(!d.shift)sel.clear();let c=0;for(const n of notes){if(n[1]>=ta&&n[1]<=tb){const y=ys(step(n[3]));if(y>=ya-h&&y<=yb+h){sel.add(n[0]);c++}}}
+  band=[Math.max(0,ta),tb];info(`${c} notes selected, ${mmss(band[0])} to ${mmss(band[1])}. <kbd>⌫</kbd> deletes them, Apply speeds up the stretch, <kbd>L</kbd> loops it.`);refresh();draw()});
+function seek(x){const was=playing;if(was)pause();now=Math.max(0,tx(x));draw();if(was)play()}
+cv.addEventListener("wheel",e=>{if(!doc)return;e.preventDefault();if(e.ctrlKey){zoom(e.deltaY<0?1.15:1/1.15);return}
+  const was=playing;if(was)pause();now=Math.max(0,now+(e.deltaX||e.deltaY)/pps);draw();if(was)play()},{passive:false});
+function zoom(f){pps=Math.min(800,Math.max(8,pps*f));draw()}
+
+// ---------------------------------------------------------------- files
+const KEY=()=>"fpn:"+fileName+":"+(doc?doc.notes.length:0);
+function autosave(){try{localStorage.setItem(KEY(),JSON.stringify(doc.edits||[]))}catch(e){}}
+function load(text,name){const d=JSON.parse(text);if(d.format!=="fpn")throw Error("not an .fpn file");doc=d;doc.edits=doc.edits||[];fileName=name;dirty=false;sel.clear();band=null;loop=false;now=0;apply();
+  try{const saved=JSON.parse(localStorage.getItem(KEY())||"null");if(saved&&JSON.stringify(saved)!==JSON.stringify(doc.edits)){
+    const b=document.getElementById("banner");b.style.display="block";b.innerHTML=`This sketch has ${saved.length} edit${saved.length===1?"":"s"} from a session that was not saved. <button id="rs">Restore them</button> <button id="dc">Discard</button>`;
+    document.getElementById("rs").onclick=()=>{doc.edits=saved;apply();dirty=true;b.style.display="none";refresh();draw()};
+    document.getElementById("dc").onclick=()=>{try{localStorage.removeItem(KEY())}catch(e){};b.style.display="none"}}}catch(e){}
+  refresh();resize();info(`${notes.length} notes. Press <kbd>Space</kbd> to play.`)}
+async function save(){if(!doc)return;const text=JSON.stringify(doc);
+  try{if(!handle){if(!window.showSaveFilePicker){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=fileName;a.click();dirty=false;refresh();return}
+      handle=await showSaveFilePicker({suggestedName:fileName,id:"fpn",types:[{description:"Sketch",accept:{"application/json":[".fpn"]}}]})}
+    const w=await handle.createWritable();await w.write(text);await w.close();fileName=handle.name;dirty=false;try{localStorage.setItem(KEY(),JSON.stringify(doc.edits))}catch(e){}
+    refresh();info(`Saved ${handle.name}, ${doc.edits.length} edit${doc.edits.length===1?"":"s"}.`)}catch(e){if(e.name!=="AbortError")info("Save failed: "+e.message)}}
+async function openPicker(){try{if(window.showOpenFilePicker){[handle]=await showOpenFilePicker({id:"fpn",types:[{description:"Sketch",accept:{"application/json":[".fpn"]}}]});
+    const f=await handle.getFile();load(await f.text(),f.name)}else{const i=document.createElement("input");i.type="file";i.accept=".fpn";i.onchange=async()=>{const f=i.files[0];handle=null;load(await f.text(),f.name)};i.click()}}
+  catch(e){if(e.name!=="AbortError")info("Could not open: "+e.message)}}
+const drop=document.getElementById("drop");
+addEventListener("dragover",e=>{e.preventDefault();drop.style.display="block"});addEventListener("dragleave",e=>{if(e.target===drop)drop.style.display="none"});
+addEventListener("drop",async e=>{e.preventDefault();drop.style.display="none";const it=[...e.dataTransfer.items].find(i=>i.kind==="file");if(!it)return;
+  handle=it.getAsFileSystemHandle?await it.getAsFileSystemHandle():null;const f=it.getAsFile();try{load(await f.text(),f.name)}catch(err){info("Could not open: "+err.message)}});
+addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.returnValue=""}});
+
+// ---------------------------------------------------------------- wiring
+const btn={};for(const k of["open","save","play","del","undo","speed","zin","zout"])btn[k]=document.getElementById(k);
+btn.open.onclick=openPicker;btn.save.onclick=save;btn.play.onclick=()=>playing?pause():play();btn.del.onclick=delSel;btn.undo.onclick=undo;btn.speed.onclick=speedUp;
+btn.zin.onclick=()=>zoom(1.3);btn.zout.onclick=()=>zoom(1/1.3);
+addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;const m=e.metaKey||e.ctrlKey;
+  if(e.code==="Space"){e.preventDefault();btn.play.click()}
+  else if(m&&e.key==="z"){e.preventDefault();undo()}
+  else if(m&&e.key==="s"){e.preventDefault();save()}
+  else if(m&&e.key==="o"){e.preventDefault();openPicker()}
+  else if(e.key==="Backspace"||e.key==="Delete"){e.preventDefault();delSel()}
+  else if(e.key==="Escape"){sel.clear();band=null;loop=false;refresh();draw()}
+  else if(e.key==="l"||e.key==="L"){if(band){loop=!loop;draw();info(loop?"Looping the stretch.":"Loop off.")}}
+  else if(e.key==="ArrowRight"||e.key==="ArrowLeft"){const was=playing;if(was)pause();now=Math.max(0,now+(e.key==="ArrowRight"?2:-2)*(e.shiftKey?5:1));draw();if(was)play()}
+  else if(e.key==="Home"){const was=playing;if(was)pause();now=0;draw();if(was)play()}
+  else if(e.key==="+"||e.key==="="){zoom(1.3)}else if(e.key==="-"){zoom(1/1.3)}});
+addEventListener("resize",resize);matchMedia("(prefers-color-scheme:dark)").addEventListener("change",draw);
+resize();
+const f=new URLSearchParams(location.search).get("f");
+if(f)fetch(f,{cache:"no-store"}).then(r=>{if(!r.ok)throw Error(r.status+" "+f);return r.text()}).then(t=>load(t,decodeURIComponent(f.split("/").pop()))).catch(e=>info("Could not load "+f+": "+e.message));
+</script></body></html>
