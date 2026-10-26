@@ -11,6 +11,7 @@ h1{font-size:18px;margin:0 12px 0 0;font-weight:650}
 button{font:inherit;font-size:14px;padding:5px 11px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
 button:hover:not(:disabled){border-color:var(--acc)}button:disabled{opacity:.45;cursor:default}
 button.primary{border-color:var(--acc);color:var(--acc);font-weight:600}
+input.t{font:13px ui-monospace,Menlo,monospace;width:62px;padding:4px 6px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
 input[type=number]{font:inherit;font-size:14px;width:58px;padding:4px 6px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
 .grp{display:flex;gap:6px;align-items:center;padding-left:10px;border-left:1px solid var(--line)}
 #time{font-family:ui-monospace,Menlo,monospace;font-size:14px;min-width:120px}
@@ -31,13 +32,13 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   <button id="open">Open…</button><button id="save" disabled>Save</button>
   <div class="grp"><button id="play" class="primary" disabled>Play</button><span id="time">0:00.0</span></div>
   <div class="grp"><button id="del" disabled>Delete</button><button id="undo" disabled>Undo</button></div>
-  <div class="grp">Speed up stretch ×<input id="k" type="number" value="2" min="0.25" max="16" step="0.25"><button id="speed" disabled>Apply</button></div>
+  <div class="grp">Speed up from <input id="sa" class="t" autocomplete="off" placeholder="1:45"> to <input id="sb" class="t" autocomplete="off" placeholder="2:45"> ×<input id="k" type="number" autocomplete="off" value="2" min="0.25" max="16" step="0.25"><button id="speed" disabled>Apply and listen</button></div>
   <div class="grp"><button id="zout">−</button><button id="zin">+</button></div>
 </header>
 <div id="wrap"><canvas id="c"></canvas></div>
 <div id="info">Open a .fpn sketch, or drop one here.</div>
 <div id="log"></div>
-<div class="keys"><kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> or scroll to move · drag the top strip to seek · click a note to hear it and select it · <kbd>⇧</kbd>-click adds · drag across the staff to select a stretch · <kbd>⌫</kbd> delete · <kbd>L</kbd> loop the stretch · <kbd>⌘Z</kbd> undo · <kbd>⌘S</kbd> save · <kbd>+</kbd><kbd>−</kbd> zoom</div>
+<div class="keys"><kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> or scroll to move · drag the top strip to seek · click a note to hear it and select it · <kbd>⇧</kbd>-click adds · drag across the staff to select a stretch (or type From and To) · <kbd>⌫</kbd> delete · <kbd>L</kbd> loop the stretch · <kbd>⌘Z</kbd> undo · <kbd>⌘S</kbd> save · <kbd>+</kbd><kbd>−</kbd> zoom</div>
 <div id="drop"></div>
 <script>
 "use strict";
@@ -135,17 +136,18 @@ function audio(){if(ctx)return;ctx=new AudioContext();const comp=ctx.createDynam
   conv.buffer=ir;master.connect(dry);master.connect(conv);conv.connect(wet);dry.connect(comp);wet.connect(comp);comp.connect(ctx.destination)}
 function loadPiano(){if(loading)return loading;audio();const jobs=[];
   for(let p=21;p<109;p+=3)for(const L in LAYERS)jobs.push(fetch(`samples/${p}${L}.mp3`).then(r=>{if(!r.ok)throw Error(r.status);return r.arrayBuffer()}).then(b=>ctx.decodeAudioData(b)).then(b=>buffers[p+L]=b));
-  info("Loading the piano…");loading=Promise.all(jobs).then(()=>info(""),e=>{info("Piano samples failed to load ("+e.message+"). Run player/make_samples.py.");throw e});return loading}
+  btn.play.textContent="Loading piano…";loading=Promise.all(jobs).then(()=>{if(!playing)btn.play.textContent="Play"},e=>{btn.play.textContent="Play";info("Piano samples failed to load ("+e.message+"). Run player/make_samples.py.");throw e});return loading}
 function voice(p,v,when,end){const L=v<72?"p":"f";const base=21+Math.round((p-21)/3)*3;const b=buffers[Math.min(108,Math.max(21,base))+L];if(!b)return;
   const src=ctx.createBufferSource();src.buffer=b;src.playbackRate.value=Math.pow(2,(p-base)/12);
   const gn=ctx.createGain();gn.gain.value=Math.min(1.8,v/LAYERS[L])*.5;src.connect(gn);gn.connect(master);
   src.start(when);const stop=Math.min(end,when+6.5);gn.gain.setTargetAtTime(0,stop,.07);src.stop(stop+.6);voices.push(src);src.onended=()=>{voices=voices.filter(x=>x!==src)}}
 function songNow(){return t0song+(ctx.currentTime-t0ctx)}
-async function play(){if(!doc)return;await loadPiano();await ctx.resume();
+let playToken=0;
+async function play(){if(!doc)return;const my=++playToken;await loadPiano();await ctx.resume();if(my!==playToken||playing)return;
   if(loop&&band&&(now<band[0]||now>=band[1]))now=band[0];
   playing=true;t0ctx=ctx.currentTime+.08;t0song=now;nextIdx=notes.findIndex(n=>n[1]>=now);if(nextIdx<0)nextIdx=notes.length;
   timer=setInterval(schedule,25);schedule();btn.play.textContent="Pause";requestAnimationFrame(frame)}
-function pause(){playing=false;clearInterval(timer);for(const v of voices){try{v.stop()}catch(e){}}voices=[];btn.play.textContent="Play";draw()}
+function pause(){playToken++;playing=false;clearInterval(timer);for(const v of voices){try{v.stop()}catch(e){}}voices=[];btn.play.textContent="Play";draw()}
 function schedule(){const ahead=songNow()+.2;
   while(nextIdx<notes.length&&notes[nextIdx][1]<ahead){const [id,t,d,p,v]=notes[nextIdx];
     if(!(loop&&band&&t>=band[1])){const when=t0ctx+(t-t0song);voice(p,v,Math.max(when,ctx.currentTime),t0ctx+(releaseAt(t+d)-t0song))}nextIdx++}}
@@ -159,13 +161,19 @@ function edit(e){doc.edits=doc.edits||[];doc.edits.push(e);afterEdit()}
 function afterEdit(){const was=playing;if(was)pause();apply();dirty=true;autosave();refresh();draw();if(was)play()}
 function delSel(){if(!sel.size)return;edit({op:"delete",ids:[...sel]});info(`Deleted ${sel.size} note${sel.size>1?"s":""}.`);sel.clear()}
 function undo(){if(!doc||!doc.edits||!doc.edits.length)return;const e=doc.edits.pop();afterEdit();info("Undid: "+describe(e)+".")}
-function stretch(){if(band)return band;if(!sel.size)return null;const S=notes.filter(n=>sel.has(n[0]));
-  return [Math.min(...S.map(n=>n[1])),Math.max(...S.map(n=>n[1]+n[2]))]}
-function speedUp(){const r=stretch(),k=parseFloat(document.getElementById("k").value);if(!r||!(k>0))return;
-  const [a,b]=r;edit({op:"speed",a:+a.toFixed(4),b:+b.toFixed(4),k});band=[a,a+(b-a)/k];info(`Played ${mmss(a)} to ${mmss(b)} at ${k}× speed.`)}
+// The stretch lives in the From/To fields: a drag fills them, typing works too.
+const fa=document.getElementById("sa"),fb=document.getElementById("sb");
+function parseT(v){v=v.trim();if(!v)return NaN;const m=v.match(/^(\d+):(\d+(?:\.\d*)?)$/);return m?+m[1]*60+ +m[2]:+v}
+function setStretch(a,b){fa.value=mmss(a);fb.value=mmss(b);refresh()}
+function stretch(){const a=parseT(fa.value),b=parseT(fb.value);return a>=0&&b>a?[a,b]:null}
+fa.oninput=fb.oninput=()=>{const r=stretch();band=r;refresh();draw()};
+function speedUp(){const r=stretch(),k=parseFloat(document.getElementById("k").value);if(!r||!(k>0)){info("Give a From time before the To time, and a speed above 0.");return}
+  const [a,b]=r;if(playing)pause();edit({op:"speed",a:+a.toFixed(4),b:+b.toFixed(4),k});
+  band=[a,a+(b-a)/k];setStretch(band[0],band[1]);now=Math.max(0,a-3);draw();
+  info(`${mmss(a)} to ${mmss(b)} now plays ${k}× faster, in ${((b-a)/k).toFixed(1)} s instead of ${(b-a).toFixed(1)} s. Playing from 3 s before it.`);play()}
 function describe(e){return e.op==="delete"?`deleted ${e.ids.length} note${e.ids.length>1?"s":""}`:`${e.k}× speed from ${mmss(e.a)} to ${mmss(e.b)}`}
 function refresh(){const has=!!doc;btn.play.disabled=!has;btn.save.disabled=!has;btn.del.disabled=!sel.size;btn.undo.disabled=!(has&&doc.edits&&doc.edits.length);
-  btn.speed.disabled=!(band||sel.size);
+  btn.speed.disabled=!(has&&stretch());
   document.getElementById("title").textContent=(doc?doc.title||fileName:"Sketch player")+(dirty?" •":"");document.title=(dirty?"• ":"")+(doc?doc.title:"Sketch player");
   const L=document.getElementById("log");if(!doc){L.innerHTML="";return}
   const E=doc.edits||[];L.innerHTML=`<b>${doc.notes.length} notes played</b>, ${notes.length} in the sketch now${keyName?`, spelled for ${keyName} major`:""}. `+(E.length?`Edits, in order:<ol>${E.map(e=>`<li>${describe(e)}</li>`).join("")}</ol>`:"No edits yet.")}
@@ -186,12 +194,12 @@ cv.addEventListener("pointerup",e=>{if(!drag)return;const d=drag;drag=null;if(d.
   if(!d.moved){const n=hit(d.x0,d.y0);if(!d.shift)sel.clear();
     if(n){if(d.shift&&sel.has(n[0]))sel.delete(n[0]);else sel.add(n[0]);audition(n);
       info(`<b>${label(n[3])}</b> · velocity ${n[4]} · at ${mmss(n[1],2)} · held ${n[2].toFixed(2)} s`+(sel.size>1?` · ${sel.size} selected`:""))}
-    else{band=null;loop=false;info("")}
+    else{band=null;loop=false;fa.value=fb.value="";info("")}
     refresh();draw();return}
   // a stretch: every note whose head is inside the box
   const ta=tx(Math.min(d.x0,d.x1)),tb=tx(Math.max(d.x0,d.x1)),ya=Math.min(d.y0,d.y1),yb=Math.max(d.y0,d.y1);
   if(!d.shift)sel.clear();let c=0;for(const n of notes){if(n[1]>=ta&&n[1]<=tb){const y=ys(step(n[3]));if(y>=ya-h&&y<=yb+h){sel.add(n[0]);c++}}}
-  band=[Math.max(0,ta),tb];info(`${c} notes selected, ${mmss(band[0])} to ${mmss(band[1])}. <kbd>⌫</kbd> deletes them, Apply speeds up the stretch, <kbd>L</kbd> loops it.`);refresh();draw()});
+  band=[Math.max(0,ta),tb];setStretch(band[0],band[1]);info(`${c} notes selected, ${mmss(band[0])} to ${mmss(band[1])}. <kbd>⌫</kbd> deletes them, Apply speeds up the stretch, <kbd>L</kbd> loops it.`);refresh();draw()});
 function seek(x){const was=playing;if(was)pause();now=Math.max(0,tx(x));draw();if(was)play()}
 cv.addEventListener("wheel",e=>{if(!doc)return;e.preventDefault();if(e.ctrlKey){zoom(e.deltaY<0?1.15:1/1.15);return}
   const was=playing;if(was)pause();now=Math.max(0,now+(e.deltaX||e.deltaY)/pps);draw();if(was)play()},{passive:false});
@@ -205,7 +213,7 @@ function load(text,name){const d=JSON.parse(text);if(d.format!=="fpn")throw Erro
     const b=document.getElementById("banner");b.style.display="block";b.innerHTML=`This sketch has ${saved.length} edit${saved.length===1?"":"s"} from a session that was not saved. <button id="rs">Restore them</button> <button id="dc">Discard</button>`;
     document.getElementById("rs").onclick=()=>{doc.edits=saved;apply();dirty=true;b.style.display="none";refresh();draw()};
     document.getElementById("dc").onclick=()=>{try{localStorage.removeItem(KEY())}catch(e){};b.style.display="none"}}}catch(e){}
-  refresh();resize();info(`${notes.length} notes. Press <kbd>Space</kbd> to play.`)}
+  refresh();resize();info(`${notes.length} notes. Press <kbd>Space</kbd> to play.`);loadPiano().catch(()=>{})}
 async function save(){if(!doc)return;const text=JSON.stringify(doc);
   try{if(!handle){if(!window.showSaveFilePicker){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=fileName;a.click();dirty=false;refresh();return}
       handle=await showSaveFilePicker({suggestedName:fileName,id:"fpn",types:[{description:"Sketch",accept:{"application/json":[".fpn"]}}]})}
@@ -230,7 +238,7 @@ addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;const m=e.me
   else if(m&&e.key==="s"){e.preventDefault();save()}
   else if(m&&e.key==="o"){e.preventDefault();openPicker()}
   else if(e.key==="Backspace"||e.key==="Delete"){e.preventDefault();delSel()}
-  else if(e.key==="Escape"){sel.clear();band=null;loop=false;refresh();draw()}
+  else if(e.key==="Escape"){sel.clear();band=null;loop=false;fa.value=fb.value="";refresh();draw()}
   else if(e.key==="l"||e.key==="L"){if(band){loop=!loop;draw();info(loop?"Looping the stretch.":"Loop off.")}}
   else if(e.key==="ArrowRight"||e.key==="ArrowLeft"){const was=playing;if(was)pause();now=Math.max(0,now+(e.key==="ArrowRight"?2:-2)*(e.shiftKey?5:1));draw();if(was)play()}
   else if(e.key==="Home"){const was=playing;if(was)pause();now=0;draw();if(was)play()}
