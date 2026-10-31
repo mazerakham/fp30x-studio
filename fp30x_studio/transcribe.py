@@ -258,7 +258,7 @@ def speller(key):
 # ------------------------------------------------------------------ assembly
 
 def transcribe(src, out, *, meter=None, alpha=6.0, ghost_vel=12, title=None,
-               pedal=None, split=55):
+               pedal=None, split=55, key=None):
     import music21 as m21
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -295,8 +295,16 @@ def transcribe(src, out, *, meter=None, alpha=6.0, ghost_vel=12, title=None,
     down0 = Fraction(phase) + k * ((first - phase) // k)
     pos = [p - down0 for p in pos]
 
-    key, conf = estimate_key(notes)
-    rep.key, rep.key_confidence = key.name, round(conf, 3)
+    est, conf = estimate_key(notes)
+    rep.key_confidence = round(conf, 3)
+    # The detector reads pitch classes, so it cannot tell C# major from Db major.
+    # His name for the key wins; the estimate stays in the report.
+    if key:
+        rep.key_estimated = est.name
+        key = m21.key.Key(key[0] + key[1:].replace("b", "-"))
+    else:
+        key = est
+    rep.key = key.name
     spell = speller(key)
 
     # Staff is not hand. When both hands share the middle of the keyboard, the
@@ -450,12 +458,13 @@ def main(argv=None):
     ap.add_argument("--alpha", type=float, default=6.0)
     ap.add_argument("--ghost-vel", type=int, default=12)
     ap.add_argument("--title")
+    ap.add_argument("--key", help="spell in this key, e.g. Db or f#; overrides the estimate")
     ap.add_argument("--split", default="55",
                     help="MIDI pitch: notes below go on the bass staff; 'hands' for the viterbi hand model")
     a = ap.parse_args(argv)
     rep, _ = transcribe(a.src, a.out, meter=a.meter, alpha=a.alpha,
                         ghost_vel=a.ghost_vel, title=a.title,
-                        split=None if a.split == "hands" else int(a.split))
+                        split=None if a.split == "hands" else int(a.split), key=a.key)
     pages = engrave(a.out, title=a.title or "")
     print(f"engraved {pages} pages -> {Path(a.out) / 'score.pdf'}")
     print(json.dumps({k: v for k, v in rep.__dict__.items() if not k.endswith("_dropped")}, indent=1))
