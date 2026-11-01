@@ -2,7 +2,7 @@
 
 The problem, measured rather than assumed
 -----------------------------------------
-The first render of the 2026-08-17 nocturne peaked at **-24.5 dBFS**. That is
+Rendered at defaults, the 2026-08-17 nocturne peaks at **-24.5 dBFS**. That is
 not a property of the playing; it is fluidsynth's master gain, which defaults
 to 0.2. So the first 24 dB are free: they cost nothing, change no shape, and
 are taken by rendering again with ``-g`` rather than by amplifying a finished

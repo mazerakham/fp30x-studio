@@ -140,7 +140,7 @@ def build(take: str, out_dir: Path, clips_dir: Path, *,
             },
             "envelope": timbre.envelope(s),
             "files": files,
-            # Jake fills these in. Empty is honest; a guess is not.
+            # Filled in by the listener. Left empty rather than guessed.
             "labels": {"verdict": None, "section": None, "notes": None,
                        "tags": []},
         })
@@ -181,7 +181,7 @@ def build(take: str, out_dir: Path, clips_dir: Path, *,
             "room heard.",
             "Transpose and Master Tuning never reach the MIDI stream. A key "
             "signature below is the key of the KEYS PRESSED.",
-            "Section labels are empty until Jake fills them in. The "
+            "Section labels are empty until the listener fills them in. The "
             "segmenter finds silences, not musical form.",
         ],
     }
@@ -204,7 +204,7 @@ def readme(m: dict) -> str:
         f"WHEN   Captured {c['started_utc']}. Bundle built {m['generated_utc']}.",
         f"HOW    Roland FP-30X over BLE-MIDI into fp30x-capture, two writers, "
         f"{c['notes']} notes and {c['cc64_messages']} pedal messages.",
-        "STATE  live — labels are empty and waiting on Jake.",
+        "STATE  live — labels are empty until the listener fills them in.",
         "",
         "THE RULE THIS DIRECTORY IS BUILT ON",
         "  Nothing here is ever edited or deleted. originals/ is the capture,",

@@ -33,5 +33,5 @@
   "bark_ms": 0.0,
   "bark_amp": 0.0,
   "name": "v3-fry",
-  "note": "Session-2026-09-05 exploration toward Jake's 'acoustic, echo-ey, whiny, raspy' brief. Derived from acoustic.json by hand, NOT fitted. The clank he identified (a 'damped mechanical oscillation' on bass notes) was traced to the strike-point comb re-peaking above its first null at partial 8.4, left loud in the bass because rolloff_at(E1)=0.82 against 3.02 at A4: partials 11-14 land at 457-585 Hz on a low E. Variants named b* attack that; v* explore timbre."
+  "note": "Hand-derived from acoustic.json toward an acoustic, echoey, whiny, raspy timbre; not fitted. The clank on bass notes (a damped mechanical oscillation) comes from the strike-point comb re-peaking above its first null at partial 8.4, left loud in the bass because rolloff_at(E1)=0.82 against 3.02 at A4: partials 11-14 land at 457-585 Hz on a low E. Variants named b* attack that; v* explore timbre."
 }

@@ -45,10 +45,9 @@ SHARP_KEYS: dict[str, dict[int, tuple[int, str]]] = {
         4: (2, ""), 5: (3, "natural"), 6: (3, ""), 7: (4, "natural"),
         8: (4, ""), 9: (5, "natural"), 10: (5, ""), 11: (6, ""),
     },
-    # A-flat major / F minor: Bb Eb Ab Db.  Added 2026-08-27 because the scene
-    # had exactly one key in this table and rendered a four-flat passage under
-    # five sharps -- every note then needed a natural to cancel a sharp that
-    # should not have been there. Jake spotted it from the naturals alone.
+    # A-flat major / F minor: Bb Eb Ab Db.  Without this entry a
+    # four-flat passage renders under five sharps -- every note then needs a
+    # natural to cancel a sharp that should not be there.
     #
     # Spelled flat throughout: pc 6 is G-flat, not F-sharp. No entry crosses an
     # octave boundary (no C-flat, no B-sharp), which is what `spell`'s octave

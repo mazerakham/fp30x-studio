@@ -537,7 +537,7 @@ def _fit_lograte(t, s, lam, w, C, d, x0, *, max_iter: int = 200,
     unchanged, and :func:`_active_set_qp` solves that exactly. A backtracking
     Armijo line search on the *true* energy accepts the step.
 
-    Two safeguards, both consequences of the honest statement in the module
+    Two safeguards, both consequences of the statement in the module
     docstring that this functional is not convex:
 
     * where a slope exceeds :math:`e` the curvature ``a_k`` is negative and the

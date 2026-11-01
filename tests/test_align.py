@@ -599,7 +599,7 @@ def test_log_rate_euler_lagrange_jump_condition_holds_exactly():
         assert not w.active
         # 1e-7, not 1e-16: the rate branch is an exact QP solve, this one is a
         # Newton iteration on a non-quadratic objective and stalls at the
-        # square root of machine precision in the gradient. That is the honest
+        # square root of machine precision in the gradient. That is the real
         # floor for this solver, and the identity below is what actually pins
         # the functional.
         assert w.kkt_residual < 1e-7

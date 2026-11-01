@@ -4,7 +4,7 @@ Two jobs live here:
 
 1. **Metadata normalization.**  Every corpus states composer / title / opus
    differently (Humdrum reference records, MusicXML metadata, LilyPond headers).
-   Jake's requirement is that an identification can name "opus and number", so
+   An identification must be able to name "opus and number", so
    opus and catalogue number are pulled out into their own fields rather than
    left buried in a title string.
 
@@ -172,8 +172,8 @@ def meta_from_kern(path: Path, source) -> WorkMeta:
         m.opus = opus_from_text(one("rism-opus")) or opus_from_text(m.title) or opus_from_text(m.parent_title)
     elif "No." not in m.opus:
         # NIFC records carry the opus in !!!OPS but the number only inside
-        # !!!rism-opus / the title ("op. 62, no. 1"). Jake asked for opus AND
-        # number, so recover it rather than citing a half-identified work.
+        # !!!rism-opus / the title ("op. 62, no. 1"). An identification needs
+        # opus AND number, so recover it rather than citing a half-identified work.
         for src_text in (one("rism-opus"), m.title, m.parent_title):
             full = opus_from_text(src_text)
             if full and "No." in full and full.split()[1] == m.opus.split()[1]:
@@ -268,7 +268,7 @@ def meta_from_music21(score, path: Path, source) -> WorkMeta:
     m.opus = opus_from_text(m.title) or opus_from_text(m.parent_title)
     # In an ABC file the number is the tune's X: index within its collection,
     # not an opus. Minting "Op. 414" from it made anonymous reels read as
-    # catalogued works (JPA-150 audit: 12,581 such rows).
+    # catalogued works (12,581 such rows in the corpus).
     if (not m.opus and number and str(number).isdigit()
             and path.suffix.lower() != ".abc"):
         m.opus = norm_opus(str(number))

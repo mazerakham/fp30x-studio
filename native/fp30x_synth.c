@@ -156,7 +156,7 @@ int main(int argc, char **argv)
         MIDIPacketList pl;
         MIDIPacket *cur = MIDIPacketListInit(&pl);
 
-        /* Stamp as late as possible: this is the honest emission time. */
+        /* Stamp as late as possible: this is the true emission time. */
         uint64_t now = mach_absolute_time();
         cur = MIDIPacketListAdd(&pl, sizeof pl, cur, now, sizeof msg, msg);
         if (!cur) { fprintf(stderr, "MIDIPacketListAdd failed\n"); return 1; }

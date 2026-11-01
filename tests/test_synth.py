@@ -188,10 +188,10 @@ def test_release_velocity_changes_how_much_sound_survives_the_release(preset_nam
 # -- the damper integral ----------------------------------------------------
 
 def test_pedal_down_almost_but_not_entirely_defeats_the_damper():
-    """It used to be *entirely*, and that was the defect. cc64 sat at 127 for
-    86.6-91.4% of the playing time on real takes, so a damper that switches off
-    at the top of the travel is switched off for almost the whole piece and
-    every pedalled note runs to the model's tail limit. Felt leaks; the residual
+    """Not *entirely*: cc64 sat at 127 for 86.6-91.4% of the playing time on
+    real takes, so a damper that switches off at the top of the travel is
+    switched off for almost the whole piece and every pedalled note runs to
+    the model's tail limit. Felt leaks; the residual
     is small but it is not zero."""
     p = load_preset("acoustic")
     ped_t, ped_D = _flat_pedal(127, p)
@@ -220,10 +220,9 @@ def test_half_pedal_is_a_middle_damping_rate_not_a_switch():
 
 
 def test_the_damper_takes_the_top_of_the_spectrum_first():
-    """The bug this pass exists to fix. The damper used to be one scalar
-    exponential applied to the summed buffer, so a note under the felt kept its
-    high partials at full relative weight all the way to silence -- which is
-    the one thing a real string certainly does not do. With the per-partial
+    """A damper that is one scalar exponential applied to the summed buffer
+    keeps a note's high partials at full relative weight all the way to
+    silence, which a real string does not do. With the per-partial
     n^q law the damped tail must be darker than the free tail."""
     p = load_preset("acoustic")
     ped_t, ped_D = _flat_pedal(0, p)          # pedal up: the damper is on
@@ -449,7 +448,7 @@ def test_the_score_read_from_the_piece_matches_what_was_captured():
 
 def _need_preset(name: str) -> None:
     """Only ``acoustic`` and ``electric`` are committed; the b*/v* variants are
-    the 2026-09-05 exploration and may not be in a given checkout."""
+    exploratory and may not be in a given checkout."""
     if not (PRESET_DIR / f"{name}.json").exists():
         pytest.skip(f"preset {name!r} is not in this checkout")
 
@@ -523,7 +522,7 @@ def test_partials_honours_rolloff_per_octave():
 
 
 def test_partials_reports_the_strike_point_comb_that_traced_the_bass_clank():
-    """The 2026-09-05 finding: on a low E the comb re-peaks above its first
+    """On a low E the comb re-peaks above its first
     null at 1/0.1185 = 8.44, putting partials 11-14 at 457-585 Hz back up
     near the level of the fundamental region."""
     text = _partials_table("acoustic", 28)

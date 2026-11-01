@@ -312,7 +312,7 @@ class KeyTrack:
 
         By disjointness at most one strike (two, at a shared endpoint under the
         weak grade) can contain ``t``; the value returned is the sum, so a
-        shared endpoint reads as ``P_i + P_{i+1}`` -- the honest pointwise value
+        shared endpoint reads as ``P_i + P_{i+1}`` -- the true pointwise value
         of (1), which differs from the a.e. representative on a null set.
         """
         i = bisect.bisect_right([s.t_on for s in self.strikes], t)
@@ -383,7 +383,7 @@ class ParseReport:
     pedal_events: int = 0
     # CC64 values in 1..63: half-pedal positions. The model below thresholds
     # at 64, so these are flattened to "up". Counted so the loss is visible:
-    # on Jake's takes it is about 27% of all pedal messages (JPA-195).
+    # on the takes measured it is about 27% of all pedal messages.
     pedal_half_events: int = 0
     pedal_unclosed: int = 0
     warnings: list[str] = field(default_factory=list)

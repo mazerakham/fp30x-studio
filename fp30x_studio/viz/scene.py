@@ -48,7 +48,7 @@ Nothing here is decoration; each channel carries a measurement.
 * **Onset rate -> the trill's gold.** 8 onsets/s is a dull gold, 16 a hot one.
 * **Duration -> notehead shape**, hollow at or above :data:`OPEN_HEAD_S`, filled
   below. This is the one mapping that is a *convention* rather than a
-  measurement dressed up as one, and it is honest only because there is no
+  measurement dressed up as one, and it is defensible only because there is no
   metre here to make a real half-note out of.
 
 Trills carry three layers at once, which is how "show me all the notes" and
@@ -56,7 +56,7 @@ Trills carry three layers at once, which is how "show me all the notes" and
 size. Every individual onset is drawn at 34% size and 38% opacity at its own
 position and its own time, so nothing played is discarded. Over them runs a
 shimmer with **exactly one crest per onset** -- the mark is a tally, and you can
-count 26 crests in the first trill because he played 26 notes.
+count 26 crests in the first trill because 26 notes were played.
 """
 from __future__ import annotations
 
@@ -83,23 +83,21 @@ TAKE_T0, TAKE_T1 = 347.0, 353.5
 TITLE = "Nocturne in B major"
 SUBTITLE = "Op. 62 Nº 1"
 
-#: Which key signature to engrave, and to spell every note against. This was a
-#: hardcoded five sharps until 2026-08-27, when a four-flat passage was
-#: rendered under it and every note came out carrying a natural to cancel a
-#: sharp that should never have been printed. See staff.KEY_SIGNATURES.
+#: Which key signature to engrave, and to spell every note against. A
+#: hardcoded key renders a passage in another key with a natural on every note
+#: to cancel an accidental that should never have been printed. See
+#: staff.KEY_SIGNATURES.
 KEY = "B"
 
 
 def configure(take=None, t0=None, t1=None, title=None, subtitle=None, key=None):
     """Point the scene at a different take, window or piece.
 
-    **This exists because the scene used to read the constants below directly
-    and `render.py` only forwarded `--take`/`--window` to the AUDIO half.** The
-    result rendered the audio of one take under the notation of another and
-    reported success: on 2026-08-26 Jake got his own playing from that morning
-    scored against the previous week's trilled reprise, and said so — "sound did
-    not align with visual". Nothing errored, because both halves were
-    individually valid. The CLI accepted arguments it silently ignored.
+    **This exists because a scene that reads the constants below directly,
+    while `render.py` forwards `--take`/`--window` only to the AUDIO half,**
+    renders the audio of one take under the notation of another and reports
+    success. Nothing errors, because both halves are individually valid; the
+    CLI accepts arguments it silently ignores.
 
     So the window is no longer a constant that a caller may or may not have
     honoured; it is set here, once, and every derived quantity is recomputed
@@ -350,7 +348,7 @@ class Nocturne(MovingCameraScene):
                               velocity=int(tr.mean_velocity))
         self._records.append(self._one_note(gs, principal))
 
-        # Layer 2: every onset he actually played, small and faint.
+        # Layer 2: every onset actually played, small and faint.
         for n in tr.notes:
             # The mini-notes take the trill's gold rather than their own
             # velocity colour, and are given back some of the glow their 34%

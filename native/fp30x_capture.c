@@ -315,18 +315,14 @@ static int connect_sources(void)
     return connected;
 }
 
-/* The fix for the failure that has cost the most playing.
+/* Reconnect sources whenever the MIDI setup changes.
  *
- * This client used to be created with a NULL notify proc, so it never learned
- * that anything had changed. When the Bluetooth link dropped -- because the
- * laptop slept, because the piano's Auto Off fired, because the radio glitched
- * -- the process stayed alive holding an endpoint that no longer existed. It
- * went on reporting "0 dropped", CoreMIDI went on listing the source, and not
- * one byte reached the file. Three healthy-looking signals over a dead link.
- *
- * On 2026-08-22 that swallowed several pieces: the machine idle-slept at
- * 09:50:18, eight seconds after the last captured byte, and nothing
- * reconnected on wake.
+ * A client created with a NULL notify proc never learns that anything has
+ * changed. When the Bluetooth link drops (the laptop sleeps, the piano's Auto
+ * Off fires, the radio glitches) the process stays alive holding an endpoint
+ * that no longer exists. It goes on reporting "0 dropped", CoreMIDI goes on
+ * listing the source, and not one byte reaches the file: three healthy-looking
+ * signals over a dead link.
  *
  * kMIDIMsgSetupChanged fires when endpoints appear or disappear, which covers
  * the wake, so reconnecting here restores capture without a restart.
@@ -347,10 +343,10 @@ static void midi_notify(const MIDINotification *msg, void *ref)
 /* Hold the machine awake for as long as we are recording.
  *
  * Playing the piano is not activity the Mac can see: no key, no trackpad, and
- * on battery it idle-sleeps out from under the capture. A `caffeinate` process
- * happened to be holding this assertion on 2026-08-22 and exited 55 seconds
- * before the sleep that ate the take. Owning the assertion here means the tool
- * cannot be undone by whatever else on the system happens to stop running.
+ * on battery it idle-sleeps out from under the capture. An external
+ * `caffeinate` process holding the assertion can exit mid-take and release it.
+ * Owning the assertion here means the tool cannot be undone by whatever else
+ * on the system happens to stop running.
  */
 static void hold_awake(void)
 {
@@ -484,7 +480,7 @@ int main(int argc, char **argv)
     if (connected == 0) {
         fprintf(stderr, "no matching CoreMIDI source%s%s — nothing to capture\n",
                 match ? " for " : "", match ? match : "");
-        /* Not an error: the file is still a valid, honest, empty capture. */
+        /* Not an error: the file is still a valid, empty capture. */
     }
 
     pthread_t writer;

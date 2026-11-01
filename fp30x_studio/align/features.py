@@ -90,7 +90,7 @@ def pitch_bands(events, *, bands: int = 3) -> np.ndarray:
     matching a passage played an octave out, which real practice does. Bands
     split the keyboard into equal spans of keys, not into named octaves — the
     boundary position is arbitrary either way, and equal spans keep the
-    dimension count honest.
+    dimension count fixed.
     """
     d = MIDI_HI - MIDI_LO + 1
     X = np.zeros((len(events), 12 * bands), dtype=np.float32)

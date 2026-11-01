@@ -335,7 +335,7 @@ def decay_scale_at(note: int, halving_semitones: float = 15.5) -> float:
     Fitted on the prompt (first 25 dB) decay of 26 notes: the fundamental's
     time constant falls 0.775 +- 0.097 octaves per octave of pitch, halving
     every 15.5 semitones rather than every 24. Scatter about the line is 0.89
-    octaves, which is large and honest -- neighbouring keys on a real piano
+    octaves, which is large but real: neighbouring keys on a real piano
     differ by that much.
     """
     return 2.0 ** (-(note - B_REFERENCE_NOTE) / halving_semitones)

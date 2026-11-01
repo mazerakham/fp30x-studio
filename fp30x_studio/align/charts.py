@@ -100,7 +100,7 @@ class Axes:
         return self
 
     def step(self, xedges, yvals, cls="s1", *, extra=""):
-        """A piecewise-constant trace: the honest picture of ``phi'``."""
+        """A piecewise-constant trace: the exact shape of ``phi'``."""
         pts = []
         for k, v in enumerate(yvals):
             pts.append((xedges[k], v))

@@ -1,6 +1,6 @@
 """Tests for :mod:`fp30x_studio.identify`.
 
-Three halves, which is one too many but honest.
+Three halves.
 
 **Synthetic.** Needs no piano. Pins the properties the whole design rests on:
 that a chord arriving as a 5 ms arpeggio is one event, that an ornament is
@@ -373,18 +373,16 @@ def test_the_joplin_is_identified_from_a_stream_prefix():
 def test_the_chopin_segment_is_not_identified_from_the_stub_corpus():
     """The Chopin is *not* named, and that is the correct result.
 
-    Until 2026-08-20 this asserted the opposite. The theme it matched had been
-    derived from this very take, so a pass measured recall of one performance
-    rather than identification of a piece -- data leakage, and the figure it
-    produced (35 notes) was quoted for weeks as though it meant something.
+    A theme derived from this very take would make a pass measure recall of
+    one performance rather than identification of a piece: data leakage.
 
-    The stub is gone. The corpus now carries Op. 62 No. 1 from the Chopin
+    No such theme is in the corpus. The corpus now carries Op. 62 No. 1 from the Chopin
     Institute's scores, 85 indexed windows, and against those the segment
     produces no verdict at any length: the performance interpolates a note into
     the theme, and the matcher votes on 3-grams of intervals, so one insertion
     reframes every gram downstream.
 
-    Asserting the silence keeps the finding from being undone by accident.
+    Asserting the silence catches a derived theme re-entering the corpus.
     """
     verdicts, _ = replay_all(SESSION, STUB, chunk=2)
     by_segment = {v.segment: v for v in verdicts}
@@ -472,7 +470,7 @@ def test_the_joplin_is_named_out_of_the_whole_corpus(real_index):
     """*The Strenuous Life*, against every theme in the database.
 
     Unlike the stub test this is not circular in any degree: the corpus entry
-    came from a score, not from Jake's playing.
+    came from a score, not from a recorded take.
     """
     if not any("Strenuous Life" in t.work and t.id.startswith("idc-")
                for t in real_index.themes):
@@ -502,7 +500,7 @@ def test_the_chopin_nocturne_is_not_named_even_against_the_real_corpus(real_inde
     not_a_guess` does not generalise to a piece the matcher merely fails to
     align with.
 
-    The honest headline number for this project is therefore the Joplin, whose
+    The headline number for this project is therefore the Joplin, whose
     corpus entry came from a score. This test exists so that stays true.
     """
     verdicts, _ = replay_all(SESSION, index=real_index, chunk=2)

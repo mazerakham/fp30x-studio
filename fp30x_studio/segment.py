@@ -60,12 +60,11 @@ RELEASE_ROOM_S = 6.0
 def close_tail(track, mido, held, pedal_down, tpb, tempo, tail_s=TAIL_S):
     """End the file without damping what the performance left ringing.
 
-    An earlier version released every sounding note and forced CC64 to 0 here.
-    That rule exists for a real reason -- a MIDI file that stops mid-note
-    renders as a stuck chord -- but applied to an *ending* it is destructive.
-    The 2026-08-21 nocturne finishes with the pedal at 127 and never lifts it;
-    Jake heard the last chord damped "wayyy too early", and he was right. The
-    recording says the pedal stayed down.
+    Releasing every sounding note and forcing CC64 to 0 here has a real
+    reason: a MIDI file that stops mid-note renders as a stuck chord. Applied
+    to an *ending* it is destructive. A take that finishes with the pedal at
+    127 and never lifts it (the 2026-08-21 nocturne) has its last chord damped
+    far too early, although the recording says the pedal stayed down.
 
     So the rule now depends on why the file is ending:
 
@@ -94,16 +93,16 @@ def close_tail(track, mido, held, pedal_down, tpb, tempo, tail_s=TAIL_S):
         # pedal release here -- the clip ends before one -- so synthesising
         # any release is inventing an event, and every way of inventing it
         # sounds wrong. Measured on Op. 9 No. 2 through jRhodes3, last 250 ms
-        # window before the end, 2026-09-05:
+        # window before the end:
         #
-        #   lift at the end of the tail   -40.5 dB drop  (was the shipped one)
+        #   lift at the end of the tail   -40.5 dB drop  (the old behaviour)
         #   lift, then 6 s of room        -17.3 dB drop  (room only exposed it)
         #   CC64 tapered 127->0 over 2.5s -40.3 dB drop  (SF2 sustain is a
         #                                   switch at 64, so a ramp does
         #                                   nothing but cross the threshold)
         #   no lift at all                 -1 dB/window, smooth to the floor
         #
-        # Jake heard the shipped version as the last note played "staccato".
+        # The lift at the end of the tail makes the last note sound staccato.
         # So: let it ring and end the file. A renderer that stops at the last
         # event renders the decay; nothing is left hanging afterwards to hang.
         track.append(mido.Message("control_change", control=64, value=127,

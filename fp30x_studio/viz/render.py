@@ -52,7 +52,7 @@ def write_midi(take: Path, t0: float, t1: float, out: Path) -> Path:
     """The window as a MIDI file, pedal included.
 
     The damper's *state on entry* is written at tick 0. Without it the window
-    opens with the dampers on the strings whatever he was actually doing, and
+    opens with the dampers on the strings whatever the pedal was actually doing, and
     the first second sounds dry in a way the take is not.
     """
     import mido
