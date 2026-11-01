@@ -41,11 +41,11 @@ licence. Without them, identification falls back to a small built-in set.
 
 ## Not done yet
 
-- The native capture has only been measured against a virtual CoreMIDI source. Whether
-  Apple's BLE-MIDI driver stamps the FP-30X's packets is open: read `ts_zero` in a real
-  capture's trailer.
+- Capture over the USB-B `COMPUTER` port. On real takes Apple's BLE-MIDI driver stamps
+  every packet, but the Bluetooth link delivers on a 5 ms grid, so a chord arrives as a
+  5 ms arpeggio ([analysis, §5](docs/take-2026-08-17.html)). Whether USB avoids the grid is
+  untested.
 - The GUI still records through the polling path; the native tool is a separate command.
-- Live digital-audio capture over USB.
 
 The docs cite `JPA-n` issue numbers from a private tracker; they are not public.
 

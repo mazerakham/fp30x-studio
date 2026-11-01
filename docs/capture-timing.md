@@ -68,7 +68,7 @@ simultaneous. At 1 ms spacing it does that to more than half of them.
 The C path's timestamps were **bit-identical to the sender's** for all 1200 messages, with
 zero dropped, so its error is exactly zero and its resolution is bounded by the mach tick,
 41.67 ns. This measures the capture path only. It does not measure the piano, the key
-action, or the Bluetooth link — see [Not done yet](../README.md#not-done-yet).
+action, or the Bluetooth link — see *On the real piano* below.
 
 Reading a capture back, through the same interface the polling front end uses:
 
@@ -85,3 +85,12 @@ perf = Performance.from_raw_capture("take.fp30x")   # or straight from the path
 There is no second copy of the analysis: `RawCapture.messages` has exactly the
 `[(seconds, mido.Message)]` shape `core.Capture` produces, and `inspect_capture.load()`
 reads `.fp30x` alongside `.mid` and `.json`.
+
+## On the real piano
+
+Measured on two real takes from 2026-08-17 (2,185 and 482 packets): `ts_zero 0` in both,
+so Apple's BLE-MIDI driver stamps every packet. Removing the 2 ms poll floor exposed the
+link's own: every timestamp is a whole millisecond and a multiple of 5 ms, the minimum
+inter-packet gap is 5 ms, and a chord struck together is delivered as a 5 ms arpeggio. The
+only simultaneity the link admits is the 53 packets carrying two or three messages. The
+full analysis is §5 of [take-2026-08-17.html](take-2026-08-17.html).
