@@ -454,7 +454,7 @@ def test_a_tick_costs_about_a_millisecond_and_does_not_grow():
 # database, and they are the ones that answer the actual question: can it name
 # the piece out of tens of thousands of themes it has never been tuned against?
 
-CORPUS_DB = Path.home() / "workspace" / "audio" / "corpus" / "themes.sqlite"
+from fp30x_studio.idcorpus.sources import DB_PATH as CORPUS_DB
 needs_corpus = pytest.mark.skipif(
     not CORPUS_DB.exists(), reason="the theme corpus has not been built")
 

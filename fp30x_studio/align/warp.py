@@ -50,6 +50,11 @@ piecewise-linear functions on the mesh :math:`\\mathcal{T}=\\{0=t_0<t_1<\\dots
 Galerkin on :math:`P_1(\\mathcal{T})` is exact: the trial space contains the
 minimiser, so the finite-dimensional problem *is* the problem.
 
+That paragraph is about :math:`\\int|\\varphi'|^2`, which is the default and is
+the only term it holds for. ``smoothness="log-rate"`` breaks it, deliberately
+and openly; the section headed *Two smoothness terms* below derives exactly how
+and withdraws the claim for that case.
+
 What the penalty actually penalises
 -----------------------------------
 :math:`\\int|\\varphi'|^2` is a penalty on **absolute rate**, not on rate of
@@ -72,6 +77,87 @@ against is the straight line.
 State it plainly: this is a prior on tempo *level*, not tempo *smoothness*. An
 :math:`H^2` penalty would be the latter, and would round off exactly the abrupt
 phrase-boundary tempo changes that are the musically interesting content.
+
+Two smoothness terms, and what the second one costs
+--------------------------------------------------
+Everything above is the ``smoothness="rate"`` case, and every word of it holds
+there. ``smoothness="log-rate"`` replaces :math:`|\\varphi'|^2` with
+:math:`|\\log\\varphi'|^2`, for a good reason: **tempo is multiplicative**.
+Twice as fast and half as fast are the same size of departure from the null,
+and the quadratic term prices them at 4 and :math:`\\tfrac14`. The log term
+prices both at :math:`(\\log 2)^2`. It is the better model. It is not free, and
+what follows is the bill, derived rather than asserted.
+
+*The Euler-Lagrange equation.* With :math:`\\psi(v)=(\\log v)^2` the
+stationarity condition reads
+
+.. math::
+
+    -\\lambda\\,\\frac{d}{dt}\\Bigl[\\frac{\\log\\varphi'}{\\varphi'}\\Bigr]
+      \\;+\\; \\sum_i \\bigl(\\varphi(t_i)-s_i\\bigr)\\,\\delta_{t_i} \\;=\\; 0 .
+
+Consequence 2 survives verbatim with the *flux* :math:`\\log\\varphi'/\\varphi'`
+in place of :math:`\\varphi'`: the jump in the flux across a knot is still the
+residual over :math:`\\lambda`, which is what :attr:`Warp.flux` computes and
+what :meth:`Warp.kinks` reads the residual from. The tests check it for both
+terms.
+
+Consequence 1 does **not** survive. Off the knots the equation says the flux is
+constant, not that :math:`\\varphi''=0` -- and :math:`u\\mapsto\\log u/u` is
+two-to-one on :math:`(0,\\infty)`, rising to :math:`1/e` at :math:`u=e` and
+falling back. A slope that jumps between the two roots of one flux level is
+stationary. **Piecewise linearity is no longer a consequence of stationarity.**
+
+*Convexity, and where it stops.* :math:`\\psi''(v)=2(1-\\log v)/v^2`, positive
+for :math:`v<e` and negative after. Below :math:`e` the integrand is convex,
+Jensen applies gap by gap, and constant slope is optimal for given knot values
+-- so within that regime :math:`P_1` is exact after all and nothing has been
+lost. Above :math:`e` it is concave, and the failure there is not cosmetic.
+
+*The functional has no minimiser.* :math:`\\psi` grows sublinearly:
+:math:`\\psi(v)/v\\to0`. Displacement can therefore be bought arbitrarily
+cheaply by sprinting -- run at :math:`\\varphi'=1` over almost all of a gap and
+put the remaining displacement :math:`D` into an interval of length
+:math:`\\varepsilon` at slope :math:`D/\\varepsilon`, at a cost of
+:math:`\\varepsilon(\\log(D/\\varepsilon))^2\\to0`. The convex envelope of
+:math:`\\psi` on :math:`[1,\\infty)` is identically zero, so the relaxed
+smoothness term is :math:`\\int_{\\{\\varphi'<1\\}}|\\log\\varphi'|^2`. Taken
+literally over :math:`H^1`, this penalty charges for slowing down and nothing
+at all for speeding up; the infimum is not attained, and the direct method does
+not apply because the functional is not weakly lower semicontinuous.
+
+That is not an abstraction, and it is not confined to the continuum. Hand the
+*discrete* problem to a general-purpose NLP solver on a mesh with one short gap
+carrying a large displacement and it finds precisely this: one slope of several
+hundred, every other slope pinned to 1.00, and a lower energy than any sane
+configuration. ``tests/test_align.py`` contains that example, because a
+degeneracy nobody has seen gets rediscovered.
+
+*What this module returns, then.* The local minimiser continued from the
+straight line. The SQP starts at :math:`\\varphi_0`, which is the null
+hypothesis anyway, and descends; it returns a genuine stationary point, with
+its KKT residual measured against the true gradient exactly as before. Where
+every slope came out below :math:`e` it is the minimiser over the convex
+regime, and :attr:`Warp.convex_regime` reports whether that held. It is *not*
+the global minimiser of :math:`E` over :math:`H^1`, and no implementation could
+be, because that infimum is not attained.
+
+**The exactness claim is therefore withdrawn for this term.** Under
+``"rate"`` the :math:`P_1` solve is still the answer and not a scheme. Under
+``"log-rate"`` the mesh is a real restriction doing real work -- it is what
+makes the problem well-posed enough to solve at all -- and calling the result
+"the minimiser" without the qualifications above would be false.
+
+*Monotonicity, however, gets cheaper.* :math:`(\\log v)^2\\to+\\infty` as
+:math:`v\\to0^+`, so a plateau of positive measure has infinite energy:
+:math:`\\varphi'>0` is enforced by the integrand rather than by the constraint.
+Two caveats, both checked rather than assumed. The barrier is only
+log-squared, so a slope of :math:`10^{-6}` costs a finite :math:`190\\,h` and a
+small :math:`\\lambda` will happily pay it. And a Newton step does not respect a
+barrier it sees only through a second-order model. So :math:`\\delta>0` stays --
+now as the guarantee of bi-Lipschitz continuity, and as what keeps every
+iterate inside the domain where :math:`\\log\\varphi'` exists, rather than as
+the only thing between the fit and a non-monotone answer.
 
 Enforcing the homeomorphism
 ---------------------------
@@ -105,7 +191,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 __all__ = ["Warp", "Kink", "fit_warp", "lambda_sweep", "SweepPoint",
-           "straight_line", "gcv_lambda"]
+           "straight_line", "gcv_lambda", "SMOOTHNESS", "CONVEX_SLOPE"]
 
 
 # --------------------------------------------------------------------------
@@ -145,6 +231,13 @@ class Warp:
     active: tuple[int, ...] = ()    #: gap indices where ``phi' == min_slope``
     kkt_residual: float = 0.0
     iterations: int = 0
+    #: which smoothness term was minimised: ``"rate"`` for
+    #: :math:`\int|\varphi'|^2`, ``"log-rate"`` for :math:`\int|\log\varphi'|^2`.
+    smoothness: str = "rate"
+    #: ``log-rate`` only: whether every slope came out below :math:`e`, where
+    #: the integrand is still convex. ``False`` means the returned map is a
+    #: stationary point of a non-convex functional -- see the module docstring.
+    convex_regime: bool = True
     #: :math:`\operatorname{tr}(W+\lambda K)^{-1}W`, the effective number of
     #: free parameters. Exact while no monotonicity constraint is active (the
     #: fit is then affine in the data); an upper bound when one is.
@@ -191,17 +284,40 @@ class Warp:
 
     @property
     def dirichlet(self) -> float:
-        r""":math:`\int_0^{T_1}|\varphi'|^2\,dt`."""
+        r""":math:`\int_0^{T_1}|\varphi'|^2\,dt`. Always the quadratic form,
+        whichever term was minimised, so the two stay comparable."""
         return float(np.sum(self.slopes ** 2 * self.gaps))
 
     @property
-    def excess_energy(self) -> float:
-        r""":math:`\int(\varphi'-c)^2 = \int|\varphi'|^2 - c^2T_1`.
+    def log_dirichlet(self) -> float:
+        r""":math:`\int_0^{T_1}|\log\varphi'|^2\,dt`, the multiplicative form.
 
-        The energy *gap against the straight-line null* -- the whole of what
-        the fit spent on departing from uniform tempo scaling. Non-negative,
-        and zero exactly on :math:`\varphi_0`.
+        Zero exactly on :math:`\varphi=\mathrm{id}`, and symmetric in the way
+        that matters: a stretch run at :math:`2\times` and one run at
+        :math:`\tfrac12\times` pay the same. That symmetry is the whole reason
+        the term exists.
         """
+        return float(np.sum(np.log(self.slopes) ** 2 * self.gaps))
+
+    @property
+    def excess_energy(self) -> float:
+        r"""The energy *gap against the straight-line null* -- the whole of
+        what the fit spent on departing from uniform tempo scaling.
+        Non-negative, and zero exactly on :math:`\varphi_0`.
+
+        For ``smoothness="rate"`` this is
+        :math:`\int(\varphi'-c)^2 = \int|\varphi'|^2 - c^2T_1`, the identity
+        derived in the module docstring. For ``"log-rate"`` the counterpart is
+        :math:`\int|\log\varphi'|^2 - T_1(\log c)^2`: the constant slope
+        :math:`c` minimises :math:`\int|\log\varphi'|^2` under the
+        fixed-displacement constraint by Jensen, while :math:`\varphi'\le e`,
+        so the difference is again the excess over the null.
+
+        It dispatches, so the L-curve and the sweep measure the functional that
+        was actually minimised rather than a neighbour of it.
+        """
+        if self.smoothness == "log-rate":
+            return self.log_dirichlet - self.T1 * np.log(self.mean_rate) ** 2
         return self.dirichlet - self.mean_rate ** 2 * self.T1
 
     @property
@@ -228,35 +344,55 @@ class Warp:
 
     @property
     def energy(self) -> float:
-        """:math:`E[\\varphi]`, the functional itself."""
-        return self.data_term + self.lam * self.dirichlet
+        """:math:`E[\\varphi]`, the functional that was actually minimised."""
+        smooth = (self.log_dirichlet if self.smoothness == "log-rate"
+                  else self.dirichlet)
+        return self.data_term + self.lam * smooth
+
+    @property
+    def flux(self) -> np.ndarray:
+        r"""The Euler-Lagrange flux :math:`\tfrac12\partial_v\psi(\varphi')` on
+        each gap: :math:`\varphi'` for ``"rate"``,
+        :math:`\log\varphi'/\varphi'` for ``"log-rate"``.
+
+        Stationarity reads :math:`\lambda\,[\,\text{flux}\,]_{t_i} =
+        \varphi(t_i)-s_i` in both cases -- the same equation with a different
+        flux, which is precisely what changes when the integrand changes.
+        :meth:`kinks` reads the residual off it.
+        """
+        v = self.slopes
+        if self.smoothness == "log-rate":
+            return np.log(v) / v
+        return v
 
     # -- corners -----------------------------------------------------------
 
     def kinks(self) -> list[Kink]:
         """Every interior corner, largest tempo step first.
 
-        The residual reported is :math:`\\lambda[\\varphi']`, which by the
-        Euler-Lagrange equation equals :math:`\\varphi(t_i)-s_i`; the two are
-        cross-checked in the tests.
+        The residual reported is :math:`\\lambda` times the jump in the
+        Euler-Lagrange flux (:attr:`flux`), which by the Euler-Lagrange
+        equation equals :math:`\\varphi(t_i)-s_i`; the two are cross-checked in
+        the tests, for both smoothness terms.
         """
-        sl = self.slopes
+        sl, fx = self.slopes, self.flux
         out = [
             Kink(t=float(self.knots[k]), jump=float(sl[k] - sl[k - 1]),
                  slope_left=float(sl[k - 1]), slope_right=float(sl[k]),
-                 residual=float(self.lam * (sl[k] - sl[k - 1])))
+                 residual=float(self.lam * (fx[k] - fx[k - 1])))
             for k in range(1, len(sl))
         ]
         out.sort(key=lambda z: -abs(z.log_ratio))
         return out
 
 
-def straight_line(T1: float, T2: float, data_t, data_s, lam: float = 0.0) -> Warp:
+def straight_line(T1: float, T2: float, data_t, data_s, lam: float = 0.0,
+                  smoothness: str = "rate") -> Warp:
     """The null hypothesis :math:`\\varphi_0(t)=(T_2/T_1)\\,t`."""
     knots = np.array([0.0, float(T1)])
     return Warp(knots=knots, values=np.array([0.0, float(T2)]), lam=lam,
                 data_t=np.asarray(data_t, float), data_s=np.asarray(data_s, float),
-                min_slope=T2 / T1)
+                min_slope=T2 / T1, smoothness=smoothness)
 
 
 # --------------------------------------------------------------------------
@@ -352,8 +488,131 @@ def _active_set_qp(H, g, C, d, x0, *, max_iter: int = 400):
     return x, tuple(sorted(working)), kkt, iters
 
 
+SMOOTHNESS = ("rate", "log-rate")
+
+#: Above this slope the log-rate integrand :math:`(\log v)^2` turns concave and
+#: the discrete problem stops being convex. :math:`e`, exactly -- it is where
+#: :math:`\partial_v^2(\log v)^2 = 2(1-\log v)/v^2` changes sign.
+CONVEX_SLOPE = float(np.e)
+
+
+def _smooth_terms(v: np.ndarray, h: np.ndarray, kind: str):
+    r"""Value, flux and curvature of the smoothness integrand on each gap.
+
+    Returns ``(S, G, a)`` where ``S`` is :math:`\int\psi(\varphi')`, ``G_k`` is
+    :math:`\partial_{v}\bigl(h_k\psi(v_k)\bigr)/h_k \cdot h_k`-free, i.e. the
+    gap flux whose difference across a knot is the gradient, and ``a_k`` is the
+    second derivative of the gap's contribution with respect to a knot value.
+
+    For :math:`\psi(v)=v^2`: ``G = 2v``, ``a = 2/h`` -- which reproduces
+    :math:`2\lambda K_{ff}` and is asserted against it in the tests.
+    For :math:`\psi(v)=(\log v)^2`: ``G = 2\log v/v``,
+    ``a = 2(1-\log v)/(v^2 h)``, negative once :math:`v>e`.
+    """
+    if kind == "rate":
+        return float(np.sum(h * v ** 2)), 2.0 * v, 2.0 / h
+    lg = np.log(v)
+    return float(np.sum(h * lg ** 2)), 2.0 * lg / v, 2.0 * (1.0 - lg) / (v ** 2 * h)
+
+
+def _tridiagonal(a: np.ndarray) -> np.ndarray:
+    """Assemble the interior-knot Hessian of the smoothness term from ``a``."""
+    n = len(a) - 1
+    K = np.zeros((n, n))
+    for i in range(n):
+        K[i, i] = a[i] + a[i + 1]
+        if i + 1 < n:
+            K[i, i + 1] = K[i + 1, i] = -a[i + 1]
+    return K
+
+
+def _fit_lograte(t, s, lam, w, C, d, x0, *, max_iter: int = 200,
+                 tol: float = 1e-14):
+    r"""Sequential QP for :math:`\int|\log\varphi'|^2`.
+
+    The log-rate objective is smooth but **not quadratic**, so the single
+    active-set solve that answers the rate problem outright becomes the inner
+    step of a Newton iteration: at each iterate the objective is replaced by
+    its second-order model, the same linear inequalities are carried over
+    unchanged, and :func:`_active_set_qp` solves that exactly. A backtracking
+    Armijo line search on the *true* energy accepts the step.
+
+    Two safeguards, both consequences of the honest statement in the module
+    docstring that this functional is not convex:
+
+    * where a slope exceeds :math:`e` the curvature ``a_k`` is negative and the
+      Newton model is not a QP at all. It is floored at a small positive value
+      -- a Levenberg-style modification that keeps the model convex and the
+      step a descent direction, and costs only iterations.
+    * the iterate never leaves the feasible cone, so :math:`\log\varphi'` is
+      always defined: both ``x`` and ``x+p`` satisfy :math:`Cx\ge d`, the set is
+      convex, and the line search only ever looks between them.
+
+    Returns ``(x, active, kkt, iters, convex)``.
+    """
+    h = np.diff(t)
+    s_int, w_int = s[1:-1], w[1:-1]
+    y0, yN = float(s[0]), float(s[-1])
+    x = np.asarray(x0, float).copy()
+    floor = 1e-8 * max(1.0, float(np.mean(2.0 / h)))
+
+    def energy(z):
+        v = np.diff(np.concatenate([[y0], z, [yN]])) / h
+        S, _, _ = _smooth_terms(v, h, "log-rate")
+        return float(np.sum(w_int * (z - s_int) ** 2) + lam * S)
+
+    def gradient(z):
+        v = np.diff(np.concatenate([[y0], z, [yN]])) / h
+        _, G, a = _smooth_terms(v, h, "log-rate")
+        return 2.0 * w_int * (z - s_int) + lam * (G[:-1] - G[1:]), a, v
+
+    iters = 0
+    convex = True
+    for iters in range(1, max_iter + 1):
+        grad, a, v = gradient(x)
+        convex = bool(np.all(v <= CONVEX_SLOPE))
+        H = 2.0 * np.diag(w_int) + lam * _tridiagonal(np.maximum(a, floor))
+        # min 1/2 p'Hp + grad'p  s.t.  C(x+p) >= d, started from p = 0.
+        p, working, _, _ = _active_set_qp(H, -grad, C, d - C @ x,
+                                          np.zeros_like(x))
+        e0, slope = energy(x), float(grad @ p)
+        if slope >= 0.0:            # pragma: no cover - p is a descent step
+            break
+        step, e1 = 1.0, e0
+        for _ in range(60):
+            e1 = energy(x + step * p)
+            if e1 <= e0 + 1e-4 * step * slope:
+                break
+            step *= 0.5
+        else:                       # pragma: no cover - descent is guaranteed
+            break
+        x = x + step * p
+        # Stop on lack of progress in the energy itself, not on the step length
+        # or the Newton decrement: both of those scale with lambda and with the
+        # curvature, so a threshold that is right at one end of the sweep is
+        # wrong at the other. This one is the rounding floor of the objective,
+        # which is the same at every lambda -- and reaching it is what real
+        # correspondences do, one of which ran an earlier version of this loop
+        # forever.
+        if e0 - e1 <= tol * max(1.0, abs(e0)):
+            break
+    else:                           # pragma: no cover
+        raise RuntimeError("log-rate SQP did not converge")
+
+    # KKT certificate on the *true* gradient, measured rather than assumed:
+    # the multipliers are recovered by least squares on the active rows.
+    grad, a, v = gradient(x)
+    if working:
+        mu, *_ = np.linalg.lstsq(C[list(working)].T, grad, rcond=None)
+        r = grad - C[list(working)].T @ mu
+    else:
+        r = grad
+    kkt = float(np.linalg.norm(r) / max(1.0, np.linalg.norm(grad)))
+    return x, tuple(sorted(working)), kkt, iters, bool(np.all(v <= CONVEX_SLOPE))
+
+
 def fit_warp(t, s, lam: float, *, min_slope_frac: float = 0.05,
-             weights=None) -> Warp:
+             weights=None, smoothness: str = "rate") -> Warp:
     """Minimise :math:`E` over increasing piecewise-linear :math:`\\varphi`.
 
     ``t`` and ``s`` are matched onsets, strictly increasing, **including the
@@ -363,6 +622,12 @@ def fit_warp(t, s, lam: float, *, min_slope_frac: float = 0.05,
     ``min_slope_frac`` sets :math:`\\delta = \\rho\\,T_2/T_1`. It must be in
     :math:`(0,1)`; strict positivity is what makes the result a homeomorphism
     rather than merely monotone.
+
+    ``smoothness`` picks the penalty: ``"rate"`` for
+    :math:`\\int|\\varphi'|^2` (the default, quadratic, exact) or ``"log-rate"``
+    for :math:`\\int|\\log\\varphi'|^2` (multiplicative, non-quadratic, solved
+    by SQP). Read the module docstring before using the second: it is the
+    better model of tempo and it costs the exactness claim.
     """
     t = np.asarray(t, dtype=float)
     s = np.asarray(s, dtype=float)
@@ -376,6 +641,8 @@ def fit_warp(t, s, lam: float, *, min_slope_frac: float = 0.05,
         raise ValueError("min_slope_frac must lie in (0, 1)")
     if lam < 0:
         raise ValueError("lam must be non-negative")
+    if smoothness not in SMOOTHNESS:
+        raise ValueError(f"smoothness must be one of {SMOOTHNESS}")
 
     t = t - t[0]
     s = s - s[0]
@@ -400,11 +667,23 @@ def fit_warp(t, s, lam: float, *, min_slope_frac: float = 0.05,
     d[-1] -= T2
 
     x0 = (T2 / T1) * t[1:-1]                    # the straight line: feasible
-    x, active, kkt, iters = _active_set_qp(H, g, C, d, x0)
+    convex = True
+    if smoothness == "rate":
+        x, active, kkt, iters = _active_set_qp(H, g, C, d, x0)
+    else:
+        x, active, kkt, iters, convex = _fit_lograte(t, s, lam, w, C, d, x0)
+        # The Newton model at the solution, for df below: same assembly, the
+        # local curvature of the log integrand in place of the constant 2/h.
+        v = np.diff(np.concatenate([[s[0]], x, [s[-1]]])) / h
+        _, _, a = _smooth_terms(v, h, "log-rate")
+        H = 2.0 * np.diag(w[1:-1]) + lam * _tridiagonal(np.maximum(a, 1e-12))
 
     # Effective degrees of freedom: the trace of the hat matrix of the map
     # data -> fitted values. H = 2(W + lam*Kff), so (W + lam*Kff)^-1 W is
-    # recovered from H without reassembling.
+    # recovered from H without reassembling. Under "log-rate" the fit is not
+    # affine in the data, so this is the linearisation of that trace at the
+    # solution -- the usual df of a nonlinear smoother, and stated as such
+    # rather than passed off as exact.
     Wd = np.diag(w[1:-1])
     df = float(np.trace(np.linalg.solve(0.5 * H, Wd)))
 
@@ -414,7 +693,8 @@ def fit_warp(t, s, lam: float, *, min_slope_frac: float = 0.05,
         raise RuntimeError("solver returned a non-increasing map")
     return Warp(knots=t, values=values, lam=float(lam), data_t=t, data_s=s,
                 min_slope=delta, active=active, kkt_residual=kkt,
-                iterations=iters, df=df)
+                iterations=iters, smoothness=smoothness,
+                convex_regime=convex, df=df)
 
 
 @dataclass(frozen=True)
@@ -429,7 +709,8 @@ class SweepPoint:
     gcv: float
 
 
-def lambda_sweep(t, s, lams, *, min_slope_frac: float = 0.05) -> list[SweepPoint]:
+def lambda_sweep(t, s, lams, *, min_slope_frac: float = 0.05,
+                 smoothness: str = "rate") -> list[SweepPoint]:
     r"""Fit across a range of :math:`\lambda` and return the L-curve.
 
     :math:`\lambda` carries units of **seconds**: the data term is
@@ -440,7 +721,8 @@ def lambda_sweep(t, s, lams, *, min_slope_frac: float = 0.05) -> list[SweepPoint
     """
     out = []
     for lam in lams:
-        w = fit_warp(t, s, float(lam), min_slope_frac=min_slope_frac)
+        w = fit_warp(t, s, float(lam), min_slope_frac=min_slope_frac,
+                     smoothness=smoothness)
         n = len(w.data_t) - 2
         denom = n - w.df
         gcv = (n * w.data_term / denom ** 2) if denom > 1e-9 else float("inf")

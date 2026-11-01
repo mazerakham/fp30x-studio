@@ -77,6 +77,7 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreMIDI/CoreMIDI.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
 #include <mach/mach_time.h>
 
 #include <errno.h>
@@ -120,6 +121,9 @@ static _Atomic int      g_stop;
 static mach_timebase_info_data_t g_tb;
 static int      g_fd = -1;
 static int      g_quiet = 0;
+static MIDIPortRef g_port = 0;
+static const char *g_match = NULL;
+static IOPMAssertionID g_sleep_assertion = 0;
 static double   g_sync_interval = 0.25; /* seconds between fsyncs */
 
 static inline uint64_t ticks_to_ns(uint64_t t)
@@ -289,6 +293,87 @@ static void list_sources(void)
     }
 }
 
+/* Reconnect every matching source to the port.
+ *
+ * Called once at startup and again on every CoreMIDI setup change. Connecting
+ * a source that is already connected is harmless, so this is idempotent and
+ * there is no bookkeeping to get wrong.
+ */
+static int connect_sources(void)
+{
+    ItemCount nsrc = MIDIGetNumberOfSources();
+    int connected = 0;
+    for (ItemCount i = 0; i < nsrc; ++i) {
+        MIDIEndpointRef src = MIDIGetSource(i);
+        char *nm = endpoint_name(src);
+        if (!g_match || strstr(nm, g_match)) {
+            if (MIDIPortConnectSource(g_port, src, NULL) == noErr)
+                connected++;
+        }
+        free(nm);
+    }
+    return connected;
+}
+
+/* The fix for the failure that has cost the most playing.
+ *
+ * This client used to be created with a NULL notify proc, so it never learned
+ * that anything had changed. When the Bluetooth link dropped -- because the
+ * laptop slept, because the piano's Auto Off fired, because the radio glitched
+ * -- the process stayed alive holding an endpoint that no longer existed. It
+ * went on reporting "0 dropped", CoreMIDI went on listing the source, and not
+ * one byte reached the file. Three healthy-looking signals over a dead link.
+ *
+ * On 2026-08-22 that swallowed several pieces: the machine idle-slept at
+ * 09:50:18, eight seconds after the last captured byte, and nothing
+ * reconnected on wake.
+ *
+ * kMIDIMsgSetupChanged fires when endpoints appear or disappear, which covers
+ * the wake, so reconnecting here restores capture without a restart.
+ */
+static void midi_notify(const MIDINotification *msg, void *ref)
+{
+    (void)ref;
+    if (msg->messageID != kMIDIMsgSetupChanged) return;
+    int n = connect_sources();
+    if (!g_quiet)
+        fprintf(stderr, "\nMIDI setup changed — %d source(s) reconnected\n", n);
+    if (g_fd >= 0) {
+        dprintf(g_fd, "# setup_changed reconnected %d\n", n);
+        fsync(g_fd);
+    }
+}
+
+/* Hold the machine awake for as long as we are recording.
+ *
+ * Playing the piano is not activity the Mac can see: no key, no trackpad, and
+ * on battery it idle-sleeps out from under the capture. A `caffeinate` process
+ * happened to be holding this assertion on 2026-08-22 and exited 55 seconds
+ * before the sleep that ate the take. Owning the assertion here means the tool
+ * cannot be undone by whatever else on the system happens to stop running.
+ */
+static void hold_awake(void)
+{
+    CFStringRef why = CFSTR("fp30x-capture is recording");
+    IOReturn r = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep,
+                                             kIOPMAssertionLevelOn, why,
+                                             &g_sleep_assertion);
+    if (r != kIOReturnSuccess) {
+        g_sleep_assertion = 0;
+        if (!g_quiet) fprintf(stderr, "warning: could not prevent idle sleep\n");
+    } else if (!g_quiet) {
+        fprintf(stderr, "idle sleep held off for the duration\n");
+    }
+}
+
+static void release_awake(void)
+{
+    if (g_sleep_assertion) {
+        IOPMAssertionRelease(g_sleep_assertion);
+        g_sleep_assertion = 0;
+    }
+}
+
 static void usage(void)
 {
     fprintf(stderr,
@@ -335,7 +420,7 @@ int main(int argc, char **argv)
     if (g_fd < 0) { perror(out_path); return 1; }
 
     MIDIClientRef client = 0;
-    OSStatus err = MIDIClientCreate(CFSTR("fp30x-capture"), NULL, NULL, &client);
+    OSStatus err = MIDIClientCreate(CFSTR("fp30x-capture"), midi_notify, NULL, &client);
     if (err != noErr) { fprintf(stderr, "MIDIClientCreate failed: %d\n", (int)err); return 1; }
 
     MIDIPortRef port = 0;
@@ -354,6 +439,9 @@ int main(int argc, char **argv)
                                        });
 #pragma clang diagnostic pop
     if (err != noErr) { fprintf(stderr, "MIDIInputPortCreate failed: %d\n", (int)err); return 1; }
+    g_port = port;
+    g_match = match;
+    hold_awake();
 
     /* Header first, so a file that exists at all identifies itself. */
     uint64_t anchor_mach = mach_absolute_time();
@@ -437,6 +525,7 @@ int main(int argc, char **argv)
     fsync(g_fd);
     close(g_fd);
 
+    release_awake();
     MIDIPortDispose(port);
     MIDIClientDispose(client);
 

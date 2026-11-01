@@ -310,6 +310,24 @@ def test_the_cumulative_polyline_is_exact_not_sampled():
     np.testing.assert_allclose(interp, exact, atol=1e-9)
 
 
+def test_the_cumulative_polyline_agrees_with_the_closed_form_at_the_breakpoints():
+    """``cumulative_curve`` integrates the jumps of ``f``; ``cumulative``
+    evaluates the closed form (5). They are two routes to the same number, and
+    only the first is fast enough for a whole session -- evaluating (5) at every
+    breakpoint is quadratic and takes minutes on a 33,000-strike take. The
+    awkward cases are the ones worth pinning: coincident endpoints, a degenerate
+    strike, and a re-strike of a key that is still ringing.
+    """
+    strikes = [Strike(0.0, 1.0, 40, 100), Strike(1.0, 2.0, 40, 90),
+               Strike(0.5, 0.5, 41, 70), Strike(0.5, 2.5, 42, 60),
+               Strike(2.5, 2.5, 42, 60)]
+    p = perf_from_strikes(strikes)
+    ts, fs = p.cumulative_curve()
+    exact = np.array([p.cumulative(float(t)) for t in ts])
+    np.testing.assert_allclose(fs, exact, atol=1e-12)
+    assert fs[-1] == pytest.approx(p.energy())
+
+
 def test_plateaus_are_exactly_the_silences():
     notes, _ = phrase()
     p = parse(notes)
@@ -522,6 +540,23 @@ def test_the_figure_renders_to_a_png(tmp_path):
     assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
+def test_half_pedal_values_are_counted_not_silently_flattened():
+    """CC64 in 1..63 is flattened to 'up' by the model; the report must say so (JPA-195)."""
+    import mido
+    msgs = [(0.0, mido.Message("note_on", note=C4, velocity=80)),
+            (0.1, mido.Message("control_change", control=64, value=127)),
+            (0.2, mido.Message("control_change", control=64, value=40)),
+            (0.3, mido.Message("control_change", control=64, value=3)),
+            (0.4, mido.Message("control_change", control=64, value=0)),
+            (0.5, mido.Message("note_off", note=C4, velocity=64))]
+    p = Performance.from_messages(msgs)
+    assert p.report.pedal_events == 4
+    assert p.report.pedal_half_events == 2
+    assert "2 half-pedal values flattened to up (50.0% of pedal events)" in p.report.summary()
+    # full-travel pedalling produces no such line
+    assert "half-pedal" not in parse([(C4, 0.0, 0.2, 80)], [(0.1, 1.5)]).report.summary()
+
+
 # --------------------------------------------------------------------------
 # inspect_capture: the byte-level census
 # --------------------------------------------------------------------------
@@ -637,7 +672,7 @@ def test_inspect_capture_matches_the_real_archive_if_present():
     """Guards the claim on the page: zero pressure across the real captures."""
     from fp30x_studio.inspect_capture import load, pressure_report
 
-    archive = sorted(Path("/Users/jake/Music/FP-30X Studio/takes").glob("*.mid"))
+    archive = sorted((Path.home() / "Music" / "FP-30X Studio" / "takes").glob("*.mid"))
     if not archive:
         pytest.skip("no real captures on this machine")
     rep = pressure_report([load(p) for p in archive])

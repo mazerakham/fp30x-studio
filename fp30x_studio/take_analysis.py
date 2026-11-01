@@ -501,11 +501,35 @@ def _tidy(ax, *, xgrid: bool = True, ygrid: bool = False):
     ax.set_axisbelow(True)
 
 
+
+def densest_window(perf, span=14.0):
+    """The `span`-second window containing the most strike onsets.
+
+    The CLI used to default to (207.5, 221.5) — the answer for one take in
+    2026-08-17, frozen as a constant. On the 2026-08-22 evening capture that
+    window is silent and the figure crashed. Compute it.
+    """
+    ons = sorted(s.t_on for s in perf.strikes())
+    if not ons:
+        return (0.0, span)
+    best, best_n, j = ons[0], 0, 0
+    for i, t in enumerate(ons):
+        while j < len(ons) and ons[j] <= t + span:
+            j += 1
+        if j - i > best_n:
+            best_n, best = j - i, t
+    return (best, best + span)
+
+
 def _title(ax, text):
     ax.set_title(text, loc="left", color=PALETTE["ink"], pad=7)
 
 
 def _key_axis(ax, keys):
+    if not keys:
+        # A detail window with no strikes in it. Real input: this take has 998
+        # silent plateaus, and a hard-coded window landed in one of them.
+        keys = [21, 108]
     ticks = [k for k in range(min(keys), max(keys) + 1) if midi_note(k) % 12 == 0]
     ax.set_yticks(ticks)
     ax.set_yticklabels([note_name(midi_note(k)) for k in ticks])
@@ -1740,8 +1764,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--figures", type=Path, default=None,
                     help="directory for the intermediate PNGs "
                          "(default: alongside --out, in figures/)")
-    ap.add_argument("--window", type=float, nargs=2, default=(207.5, 221.5),
-                    help="the detail window, in seconds")
+    ap.add_argument("--window", type=float, nargs=2, default=None,
+                    help="the detail window, in seconds "
+                         "(default: the densest 14 s of this take)")
     ap.add_argument("--dpi", type=int, default=190)
     args = ap.parse_args(argv)
 
@@ -1763,7 +1788,8 @@ def main(argv: list[str] | None = None) -> None:
     figures = {
         "object": figure_object(a, figdir / f"{stem}-object.png", args.dpi),
         "detail": figure_detail(a, figdir / f"{stem}-detail.png",
-                                tuple(args.window), args.dpi),
+                                tuple(args.window) if args.window else densest_window(a.actuator),
+                                args.dpi),
         "scaling": figure_scaling(a, figdir / f"{stem}-scaling.png", args.dpi),
         "velocity": figure_velocity(a, figdir / f"{stem}-velocity.png", args.dpi),
         "keyboard": figure_keyboard(a, figdir / f"{stem}-keyboard.png", args.dpi),

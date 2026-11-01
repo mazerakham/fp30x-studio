@@ -45,7 +45,6 @@ __all__ = [
     "inharmonicity_at",
     "rolloff_at",
     "partial_frequencies",
-    "radiation_gain",
     "decay_scale_at",
     "damper_contact",
     "velocity_norm",
@@ -292,7 +291,7 @@ def inharmonicity_at(note: int, B_ref: float,
     1.4e-4 (IQR 1.28-1.62e-4) flat from MIDI 30 to 48 and then *rises* again to
     2.5e-4 at C1, because those are wound strings on a different scaling and the
     bass break is a discontinuity, not a bend. The exponential extrapolates to
-    2.3e-5 at C1, sixteen times too small. A floor gets the flat part right and
+    2.3e-5 at C1, about eleven times too small (2.47e-4 / 2.32e-5 = 10.7). A floor gets the flat part right and
     leaves the C1 rise as a known, documented residual.
     """
     B = B_ref * 10.0 ** ((note - B_REFERENCE_NOTE) / 12.0 * decades_per_octave)

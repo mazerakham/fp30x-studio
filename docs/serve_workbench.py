@@ -20,7 +20,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DOCS = HERE
-PY = "/Users/jake/workspace/audio/.venv/bin/python"
+PY = sys.executable
 BUILDER = HERE / "build_takes.py"
 PORT = 8791
 

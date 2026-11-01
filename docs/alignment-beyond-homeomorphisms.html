@@ -1,0 +1,297 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Cut, glue, and L²([0,1], V)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<script defer src="vendor/katex/katex.min.js"></script>
+<script defer src="vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'\\[',right:'\\]',display:true},
+    {left:'$',right:'$',display:false}]})"></script>
+<style>
+:root{--bg:#faf9f7;--panel:#fff;--ink:#1b1a18;--dim:#6b6763;--line:#e3dfd9;
+  --accent:#8a5a2b;--ok:#3f7a4a;--bad:#a33f3f;--cool:#4a6b8a}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#16151a;--panel:#1e1d23;--ink:#ece9e4;--dim:#9a948d;--line:#33313a;
+  --accent:#d3a06a;--ok:#7fb98c;--bad:#d98080;--cool:#7fa3c4}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+.wrap{max-width:820px;margin:0 auto;padding:40px 24px 100px}
+h1{font-size:29px;margin:0 0 6px;letter-spacing:-.02em;line-height:1.2}
+.sub{color:var(--dim);margin:0 0 30px;font-size:15px}
+h2{font-size:20px;margin:40px 0 12px;letter-spacing:-.01em;
+  padding-bottom:6px;border-bottom:1px solid var(--line)}
+h3{font-size:16px;margin:26px 0 8px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:16px 20px;margin:18px 0}
+.panel.key{border-left:3px solid var(--accent)}
+.panel.warn{border-left:3px solid var(--bad)}
+.panel.ok{border-left:3px solid var(--ok)}
+code{background:var(--line);padding:1px 6px;border-radius:4px;font-size:13.5px}
+a{color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:14.5px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);
+  vertical-align:top}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+.katex-display{margin:16px 0;overflow-x:auto;overflow-y:hidden}
+ul{padding-left:20px}
+li{margin:6px 0}
+.tag{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);
+  color:var(--dim);white-space:nowrap}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);
+  color:var(--dim);font-size:13.5px}
+</style>
+
+<div class="wrap">
+
+<h1>Cut, glue, and <span style="white-space:nowrap">L²([0,1], V)</span></h1>
+<p class="sub">Where the homeomorphism assumption should be dropped, what it should be
+replaced with, and one place the vector-valued picture earns its keep outright.
+2026-08-26.</p>
+
+<div class="panel key">
+<b>The short version.</b> Yes to all of it, with one correction. The literature you want
+is <b>jump-aware alignment</b>, and the right generalisation of $\varphi$ is not a looser
+homeomorphism but a <b>monotone relation</b> — which is exactly what a DTW path already
+is. Your instinct about pricing cuts has a clean formulation: <b>charge a cut for the mass
+it destroys, not the duration it skips</b>, and snipping silence becomes free with no
+special case. And the $L^2([0,1],V)$ picture buys one thing decisively — it makes gluing
+<i>well-defined</i>, retiring the pedal-chasing hack. But $L^2$ is the wrong norm to
+<i>measure</i> with, and the fix has a name.
+</div>
+
+<h2>1. The literature exists, and it is your question</h2>
+
+<p><b>JumpDTW</b> — Fremerey, Müller &amp; Clausen, <i>Handling Repeats and Jumps in
+Score-Performance Synchronization</i>, ISMIR 2010
+(<a href="https://www.audiolabs-erlangen.de/content/05_fau/professor/00_mueller/03_publications/2010_FremereyMuellerClausen_PartialSync_ISMIR.pdf">PDF</a>,
+<a href="https://dblp.org/rec/conf/ismir/FremereyMC10.html">dblp</a>). The score is cut
+into <i>blocks</i> at structurally licensed points; the DTW cost matrix is augmented with
+<i>jump edges</i> between block boundaries, and the jump sequence and the alignment are
+recovered in one optimisation. Over 99% bar-level accuracy on Beethoven sonatas. This is
+precisely "a minimal set of transformations $T_1,\dots,T_N$", with the transformation set
+restricted to block-boundary jumps so the search stays polynomial.</p>
+
+<p>Follow-ons worth having: <a href="https://archives.ismir.net/ismir2020/paper/000139.pdf">Improved
+Handling of Repeats and Jumps in Audio–Sheet Image Synchronization</a> (ISMIR 2020) and
+Brazier &amp; Widmer, <a href="https://eurasip.org/Proceedings/Eusipco/Eusipco2021/pdfs/0000366.pdf">Handling
+Structural Mismatches in Real-time Opera Tracking</a> (EUSIPCO 2021), which is the online
+case.</p>
+
+<p>The discrete ancestor is <b>Gotoh (1982)</b>: affine gap penalties, cost
+$g(k) = \alpha + \beta k$ — expensive to open a gap, cheap to extend it. Your
+<code>correspond.py</code> is already Smith–Waterman, i.e. local alignment with linear
+gaps. Affine is a small change to <code>_local_align</code> and is strictly the better
+model: one long cut should not cost what many short ones cost.</p>
+
+<h2>2. Price the cut by mass, not by duration</h2>
+
+<p>This is the part of your question with the cleanest answer. You asked for a measure
+"not too punishing of snipping on the left and right endpoint of a section of silence".
+Do not special-case silence. Charge a cut for what it removes:</p>
+
+$$ c(\text{cut over } [s,t]) \;=\; \int_s^t \lVert f(u) \rVert_V \, du $$
+
+<p>On silence $f \equiv 0$, so the cut is <b>free</b> — automatically, and by the same
+formula that makes cutting through a held chord expensive. Cheap at the edges of a rest,
+prohibitive mid-phrase, and continuous in between. No threshold to tune.</p>
+
+<div class="panel">
+This is not an ad-hoc trick. It is the marginal-relaxation penalty of <b>unbalanced
+optimal transport</b> (Chizat–Peyré–Schmitzer–Vialard): allow mass to be created and
+destroyed, and pay a divergence for the privilege. "This part of the recording
+corresponds to nothing in the score" is exactly unmatched mass.
+</div>
+
+<h2>3. What $L^2([0,1],V)$ actually buys</h2>
+
+<h3>It makes gluing well-defined — this is the real prize</h3>
+
+<p>In the <i>event</i> representation a cut can orphan a note-off, and pedal state at the
+splice has to be reconstructed. That is why <code>segment.py</code> carries a
+Chase&nbsp;Events routine and why the skill warns that a clip cut mid-phrase renders dry.</p>
+
+<p>In the <i>function</i> representation there is no such thing as an orphan. $f(t)$ <b>is</b>
+the sounding state — the vector of momenta currently sustained. Gluing $f|_{[a,b]}$ to
+$f|_{[c,d]}$ is concatenation of restrictions, and the state carried across the seam is
+just $f(c^-)$, obtained by <i>evaluating the function</i>. Held notes and pedal survive by
+construction.</p>
+
+<div class="panel ok">
+<b>Chasing is not an algorithm; it is evaluation.</b> That single observation retires a
+hack you are currently maintaining, and it is the strongest argument for adopting the
+formulation.
+</div>
+
+<h3>Correlation is an inner product, and chroma is a projection</h3>
+
+<p>$L^2([0,1],V) \cong L^2([0,1]) \otimes V$ is a separable Hilbert space with
+$\langle f,g\rangle = \int_0^1 \langle f(t), g(t)\rangle_V\,dt$. The GEMM you liked is
+$\tau \mapsto \langle f, g(\cdot - \tau)\rangle$ — cross-correlation is literally the
+inner product of translates.</p>
+
+<p>And it locates today's failure exactly. Chroma is the pushforward along the
+octave-quotient $\pi : \mathbb{R}^{88} \to \mathbb{R}^{12}$. Correlating chroma is
+correlating $\pi f$ against $\pi g$, and</p>
+
+$$ \dim \ker \pi = 76 .$$
+
+<div class="panel warn">
+The validation found that on a typical window the best <i>wrong</i> score beats the right
+one. That is not a warping failure. It is a <b>76-dimensional kernel</b> — register was
+thrown away before the comparison started. See §7.
+</div>
+
+<h2>4. Where $L^2$ fails, and the two fixes</h2>
+
+<p>$L^2$ is a bad norm for alignment, and badly so. For step functions with sharp onsets,
+$\lVert f - f(\cdot-\varepsilon)\rVert_{L^2}$ does not decay as $\varepsilon \to 0$ in any
+useful way — two performances of the same music at slightly different tempi are nearly
+orthogonal. This is <i>why</i> nobody aligns in $L^2$ and everyone reaches for DTW.</p>
+
+<h3>Fix A — measure in a negative-order Sobolev norm</h3>
+
+<p>In $H^{-1}$, two Diracs a distance $\varepsilon$ apart are $O(\sqrt{\varepsilon})$
+apart rather than a fixed distance. Onset jitter becomes cheap <i>smoothly and
+automatically</i>, instead of by a hand-set tolerance.</p>
+
+<p>You currently have that tolerance as a constant: <code>CLUSTER_TOL_S = 0.055</code>.
+Replacing a magic number with a norm is a real improvement — the 30 ms chord window and
+the 55 ms cluster window are two guesses at the same underlying fact.</p>
+
+<h3>Fix B — quotient by the warping group (this is the rigorous version of what you built)</h3>
+
+<p>Let $\Gamma$ be the group of increasing diffeomorphisms of $[0,1]$. The
+<b>square-root velocity function</b> $q_f = \dot f / \sqrt{|\dot f|}$ turns the Fisher–Rao
+metric into the plain $L^2$ metric, and the key identity is that $\Gamma$ acts by
+<i>isometries</i>: $q_{f\circ\gamma} = (q_f\circ\gamma)\sqrt{\dot\gamma}$ preserves the
+norm. So</p>
+
+$$ d\big([f],[g]\big) \;=\; \inf_{\gamma\in\Gamma}\; \big\lVert\, q_f - (q_g\circ\gamma)\sqrt{\dot\gamma} \,\big\rVert_{L^2} $$
+
+<p>is a <b>genuine metric on $L^2/\Gamma$</b> — performance modulo rubato — computable by
+dynamic programming. Srivastava, Klassen, Joshi &amp; Jermyn,
+<a href="https://arxiv.org/abs/1103.3817"><i>Registration of Functional Data Using
+Fisher-Rao Metric</i></a> (arXiv:1103.3817); implementations in
+<a href="https://fdasrsf-python.readthedocs.io/"><code>fdasrsf</code></a> (Python) and
+<code>fdasrvf</code> (R).</p>
+
+<div class="panel">
+Your <code>warp.py</code> is a cousin of this: you minimise
+$\sum_i(\varphi(t_i)-s_i)^2 + \lambda\!\int|\varphi'|^2$, Fisher–Rao effectively works with
+$\sqrt{\varphi'}$. The SRVF version buys something yours does not have — <b>it is a metric</b>.
+Your $E[\varphi]$ is asymmetric in $f$ and $g$, so it obeys no triangle inequality, which
+is why "align A to B" and "align B to A" can disagree and why you cannot cluster takes
+with it. That matters the moment you want to ask which of six attempts at the ending is
+the outlier.
+</div>
+
+<h2>5. The object you actually want is a monotone relation</h2>
+
+<p>Drop injectivity and continuity but keep order, and the right object is not a map at
+all. It is a closed <b>monotone relation</b> $R \subseteq [0,1]^2$ — which is exactly what
+a DTW path is, and is the natural completion of $\Gamma$ under jumps. Horizontal and
+vertical segments are precisely cuts on one side or the other.</p>
+
+<p>Then the whole thing is one functional:</p>
+
+$$ E[R] \;=\; \underbrace{\int_R \big\lVert q_f - q_g \big\rVert^2}_{\text{fit}}
+\;+\; \underbrace{\lambda \int \big|\log \dot\gamma\big|^2}_{\text{rubato}}
+\;+\; \underbrace{\mu\,\#\{\text{jumps}\}}_{\text{parsimony}}
+\;+\; \underbrace{\sum_{\text{jumps}} \int_{\text{excised}} \lVert f \rVert_V}_{\text{mass destroyed}} $$
+
+<p>Reading the terms: the third is your "minimal set of transformations" (an affine gap
+opening cost, so one long cut beats many short ones); the fourth is §2, and is what makes
+snipping at the edge of a rest free. $\log\dot\gamma$ rather than $\dot\gamma$ because
+tempo is multiplicative — twice as fast and half as fast should cost the same, which your
+current $\int|\varphi'|^2$ does not deliver.</p>
+
+<h2>6. The 89th coordinate — three caveats</h2>
+
+<p><code>performance.py</code> already builds $f:\mathbb{R}\to\mathbb{R}^{88}$ as a step
+function in $BV \cap L^\infty$, with pedal kept as a <i>separate</i> track. So promoting
+it to a coordinate is a real proposal. Three things to get right:</p>
+
+<table>
+<tr><th>issue</th><th>what it means</th></tr>
+<tr><td><b>Pedal is not a source</b></td>
+<td>It does not add sound; it modifies decay. $\mathbb{R}^{88}\oplus\mathbb{R}$ presents
+as a direct sum something that acts multiplicatively — closer to a bundle or a semidirect
+product. For <i>alignment</i> a weighted 89th coordinate is harmless. For <i>synthesis</i>
+it is wrong, and your <code>synth/</code> already treats it correctly.</td></tr>
+<tr><td><b>Make it continuous</b></td>
+<td><code>performance.py</code> thresholds CC64 ≥ 64 and says half-pedalling is not
+modelled. But the FP-30X sends continuous CC64 — the 2026-08-24 take contains values of
+<b>18 and 3</b> among its 5,950 pedal messages. The binary version is discarding real
+technique. An 89th coordinate valued in $[0,1]$ recovers it.</td></tr>
+<tr><td><b>Velocity as amplitude is lossy</b></td>
+<td>$P$ enters as the height of an indicator, but velocity changes <i>timbre</i>, not just
+level — your fitted acoustic preset carries <code>velocity_brightness = 1.61</code>. A
+scalar coordinate is a summary of a spectral change. Fine for alignment; do not mistake it
+for the sound.</td></tr>
+</table>
+
+<h2>7. The caveat that matters most</h2>
+
+<div class="panel warn">
+<b>This machinery fixes warping. It does not fix discrimination — and discrimination is
+what failed.</b>
+</div>
+
+<p>Two separable problems have been sharing a name:</p>
+
+<ul>
+<li><b>Which piece / where in it?</b> A question about the <i>feature map</i>. It failed
+because $\pi$ has a 76-dimensional kernel — precision at $z\ge6$ fell from 0.979 against
+24 decoys to 0.544 against 515. Richer transformations cannot recover information a
+projection already destroyed. Cut-and-glue will not help here at all; using more of $V$
+than its octave quotient will.</li>
+<li><b>Given the passage, how do the two readings correspond?</b> A question about the
+<i>transformation class</i>, and it is genuinely limited by the homeomorphism assumption —
+restarts, repeats of a hard bar, and stopping mid-phrase are all jumps. Everything above
+applies, and this is where it pays.</li>
+</ul>
+
+<p>Which is convenient, because the studio's verify step is the second question, not the
+first: you declare the bars, so the piece and the passage are known, and all that remains
+is the correspondence. <b>Jump-aware alignment is the right model for practice</b>, where
+homeomorphisms never were — Nakamura et al. built HMMs over score position with exactly
+these skip-and-repeat transitions for the same reason.</p>
+
+<h2>8. What I would actually do, in order</h2>
+
+<table>
+<tr><th></th><th>change</th><th>cost</th></tr>
+<tr><td><span class="tag">1</span></td>
+<td>Affine gap penalty in <code>correspond.py</code>'s <code>_local_align</code>.
+One long cut stops costing what many short ones cost.</td><td>an hour</td></tr>
+<tr><td><span class="tag">2</span></td>
+<td>Cut cost $=\int\lVert f\rVert$ over the excised window. Silence-snipping becomes free
+by construction; <code>CLUSTER_TOL_S</code>-style thresholds start dissolving.</td><td>an afternoon</td></tr>
+<tr><td><span class="tag">3</span></td>
+<td>$\log\dot\varphi$ instead of $\varphi'$ in the smoothness term, so tempo is
+multiplicative.</td><td>small, and strictly more correct</td></tr>
+<tr><td><span class="tag">4</span></td>
+<td>Promote pedal to a continuous 89th coordinate; splice by evaluating $f$ rather than
+chasing CC64.</td><td>a day, retires a hack</td></tr>
+<tr><td><span class="tag">5</span></td>
+<td>SRVF distance for the <i>symmetric</i> question — clustering six attempts at the
+ending, finding the outlier. Do not replace <code>warp.py</code>; add it beside.</td><td>worth a spike</td></tr>
+<tr><td><span class="tag">6</span></td>
+<td>Separately, and more urgently: stop projecting to 12 dimensions when asking which
+piece.</td><td>the real bug</td></tr>
+</table>
+
+<footer>
+References verified 2026-08-26, not quoted from memory. JumpDTW: Fremerey, Müller &amp;
+Clausen, ISMIR 2010. Elastic FDA: Srivastava, Klassen, Joshi &amp; Jermyn, arXiv:1103.3817.
+Gotoh, <i>J. Mol. Biol.</i> 162:705–708, 1982 — affine gaps, cited from standard knowledge
+and not re-checked today.<br>
+Existing code referenced: <code>fp30x_studio/performance.py</code> (the $\mathbb{R}^{88}$
+step function, JPA-118), <code>align/warp.py</code>, <code>align/correspond.py</code>,
+<code>align/corr.py</code>, <code>segment.py</code>.
+</footer>
+
+</div>
