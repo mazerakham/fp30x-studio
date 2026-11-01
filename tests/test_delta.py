@@ -26,6 +26,7 @@ from fp30x_studio.delta import (compare_deltas, cosine, fit_delta,
                                 write_delta)
 from fp30x_studio.delta.cluster import cluster_with_index
 from fp30x_studio.delta.score import ScoreParseError
+from fp30x_studio.idcorpus.sources import RAW_DIR
 
 # A four bar scale in 4/4, one voice, quarter notes throughout: sixteen notes
 # whose notated onsets are 0, 1, 2, ... and whose notated lengths are all 1.
@@ -321,8 +322,7 @@ def test_report_is_a_self_contained_page_with_no_em_dashes(tmp_path):
 # the real take
 # ---------------------------------------------------------------------------
 
-SCORE_62 = Path("~/workspace/audio/corpus/raw/humdrum-chopin-first-editions/"
-                "kern/062-1-BR-001.krn").expanduser()
+SCORE_62 = RAW_DIR / "humdrum-chopin-first-editions" / "kern" / "062-1-BR-001.krn"
 
 
 @pytest.mark.skipif(not SCORE_62.exists(),
@@ -341,8 +341,7 @@ def test_a_score_whose_parts_disagree_is_refused():
     assert len(load_score_notes(SCORE_62, check=False).notes) > 1000
 
 
-SCORE_72 = Path("~/workspace/audio/corpus/raw/humdrum-chopin-first-editions/"
-                "kern/072-1-MEIf-001-nocturne.krn").expanduser()
+SCORE_72 = RAW_DIR / "humdrum-chopin-first-editions" / "kern" / "072-1-MEIf-001-nocturne.krn"
 TAKE_72 = Path("~/Music/FP-30X Studio/takes/clips/"
                "2026-09-08-op72no1-e-minor-COMPLETE-5m05s.mid").expanduser()
 

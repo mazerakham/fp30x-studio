@@ -19,7 +19,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/Users/jake/workspace/audio/fp30x-studio")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fp30x_studio import rawcapture
 from fp30x_studio.pipeline import pairing

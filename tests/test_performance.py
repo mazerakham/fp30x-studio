@@ -672,7 +672,7 @@ def test_inspect_capture_matches_the_real_archive_if_present():
     """Guards the claim on the page: zero pressure across the real captures."""
     from fp30x_studio.inspect_capture import load, pressure_report
 
-    archive = sorted(Path("/Users/jake/Music/FP-30X Studio/takes").glob("*.mid"))
+    archive = sorted((Path.home() / "Music" / "FP-30X Studio" / "takes").glob("*.mid"))
     if not archive:
         pytest.skip("no real captures on this machine")
     rep = pressure_report([load(p) for p in archive])

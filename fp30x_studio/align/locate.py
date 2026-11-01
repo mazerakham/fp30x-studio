@@ -13,7 +13,9 @@ from multiprocessing import Pool
 from .events import load_segments
 from .correspond import correspond
 
-K = os.path.expanduser("~/workspace/audio/corpus/raw/humdrum-chopin-first-editions/kern")
+from ..idcorpus.sources import RAW_DIR
+
+K = str(RAW_DIR / "humdrum-chopin-first-editions" / "kern")
 WORKS = [
     ("Op. 9 No. 1", "B-flat minor", "009-1-KI-001"), ("Op. 9 No. 2", "E-flat major", "009-1-KI-002"),
     ("Op. 9 No. 3", "B major", "009-1-KI-003"), ("Op. 15 No. 1", "F major", "015-1a-BH-001"),

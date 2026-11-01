@@ -779,7 +779,7 @@ and keep the old string in `legacy_key` (FPX-131).
 **FPX-94 (MUST).** Assertions are **append-only**. The current writer keeps exactly one prior
 verdict — `rec["revised_from"] = prev["verdict"]` at `serve_labels.py:351-353` — so a second
 revision destroys the first. Reversals are data: he revised one verdict from `confirm` to `reject`
-after listening again (`DESIGN-product.md` §6), and that is the most informative record in the
+after listening again, and that is the most informative record in the
 file.
 
 ### 5.1 Assertion schema
