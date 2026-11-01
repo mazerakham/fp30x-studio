@@ -157,7 +157,7 @@ class MatchedPair:
 
 @dataclass
 class Correspondence:
-    """The matched onsets, and an honest census of everything else."""
+    """The matched onsets, and a census of everything else."""
 
     pairs: list[MatchedPair]
     a: tuple[Event, ...]
@@ -376,7 +376,7 @@ def mass_weights(perf, events, *, t_end: float | None = None,
     mean = float(raw.mean())
     # An entirely silent stretch has no mass to apportion; fall back to the
     # count rather than dividing by zero, which is the old behaviour and the
-    # only honest answer when the integral says nothing.
+    # only defensible answer when the integral says nothing.
     return raw / mean if mean > 0.0 else np.ones_like(raw)
 
 

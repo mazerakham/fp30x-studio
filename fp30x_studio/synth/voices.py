@@ -93,7 +93,7 @@ def release_tau(velocity_off: int, preset: Preset) -> float:
 
     Linear in the byte between the two preset endpoints, because there is no
     evidence in the capture for any particular curve and a straight line is the
-    honest default.
+    neutral default.
     """
     v = min(max(velocity_off, 0), 127) / 127.0
     ms = preset.release_ms_slow + (preset.release_ms_fast - preset.release_ms_slow) * v

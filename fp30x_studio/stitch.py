@@ -2,11 +2,11 @@
 
 Why this exists
 ---------------
-On 2026-08-21 the same nocturne was played twice and neither take is whole. The
-first went deaf partway in and holds only the opening. The second was armed too
-early -- the BLE link took 27 seconds to start delivering after CoreMIDI
-reported the source connected -- so it opens mid-note and is missing the
-introduction. Between them they cover the piece.
+A piece can be captured twice with neither take whole. One capture goes deaf
+partway in and holds only the opening. The other starts late, because the BLE
+link can take 27 seconds to start delivering after CoreMIDI reports the source
+connected, so it opens mid-note and is missing the introduction. Between them
+they cover the piece.
 
 These are two performances, not two halves of one, so the join is a real edit
 and the tool says so rather than pretending otherwise. What makes it defensible
@@ -126,12 +126,11 @@ def build(head_path, head_from_ns, seam_ns, body_path, out_mid: Path):
     head_len = prev_s
 
     # ---- the seam ----
-    # Do NOT damp here. An earlier version released every sounding note and
-    # forced CC64 to 0 at the join, which is the correct thing to do at the end
-    # of a file and destructive in the middle of one: the head is pedalling
-    # through this moment, so lifting strips the sustain from the notes either
-    # side of the seam until the body's next pedal event arrives. Jake heard it
-    # as "a few notes seeming to not have sustain", four seconds wide.
+    # Do NOT damp here. Releasing every sounding note and forcing CC64 to 0
+    # is the correct thing to do at the end of a file and destructive in the
+    # middle of one: the head is pedalling through this moment, so lifting
+    # strips the sustain from the notes either side of the seam until the
+    # body's next pedal event arrives, an audible gap about four seconds wide.
     #
     # Carrying the pedal across also makes the body's own opening work for us.
     # The body was captured mid-note, so it begins with orphan note-offs -- and
@@ -146,7 +145,7 @@ def build(head_path, head_from_ns, seam_ns, body_path, out_mid: Path):
     # ---- body, from its first message ----
     #
     # DO NOT "FIX" THIS TO ANCHOR ON THE FIRST NOTE-ON without re-listening.
-    # Two offsets here cancel, and an audit on 2026-08-21 found both:
+    # Two offsets here cancel:
     #
     #   * the body is anchored to its first raw *message*, which is an orphan
     #     note-off, so its first note-on lands 0.51 s after the nominal seam;
@@ -155,8 +154,8 @@ def build(head_path, head_from_ns, seam_ns, body_path, out_mid: Path):
     #
     # Net, the body's music begins at 45.63 s, against two independent
     # estimates of the true anchor at 45.33 s and 45.70 s. That is inside the
-    # rubato spread between the two performances, and Jake reports the seam
-    # undetectable. Correcting either offset alone moves it out of that window.
+    # rubato spread between the two performances, and the seam is inaudible.
+    # Correcting either offset alone moves it out of that window.
     b0 = None
     body_pedal_state = 0
     for ns, data in _raw_messages(body_path):

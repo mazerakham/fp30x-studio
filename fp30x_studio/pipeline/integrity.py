@@ -8,7 +8,7 @@ anywhere else.
 The invisible failure
 ---------------------
 ``native/fp30x_capture.c`` reports ``dropped 0`` on every take so far, and that
-number is honest but nearly meaningless for this purpose: it counts packets
+number is accurate but nearly meaningless for this purpose: it counts packets
 *our own ring buffer* refused, i.e. packets CoreMIDI already handed us. A MIDI
 message lost on the Bluetooth radio never reaches CoreMIDI, so CoreMIDI never
 counts it, so neither do we. **Radio-side loss is invisible to the drop counter

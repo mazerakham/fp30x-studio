@@ -541,7 +541,7 @@ def test_the_figure_renders_to_a_png(tmp_path):
 
 
 def test_half_pedal_values_are_counted_not_silently_flattened():
-    """CC64 in 1..63 is flattened to 'up' by the model; the report must say so (JPA-195)."""
+    """CC64 in 1..63 is flattened to 'up' by the model; the report must say so."""
     import mido
     msgs = [(0.0, mido.Message("note_on", note=C4, velocity=80)),
             (0.1, mido.Message("control_change", control=64, value=127)),

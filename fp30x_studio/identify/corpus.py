@@ -11,9 +11,9 @@ Two corpora ship here:
 
 ``STUB`` -- themes entered by hand, each with its provenance in
 ``Theme.source``. Some are common-practice incipits entered from memory of the
-score; the rest are *derived from Jake's own takes*, and say so. A derived theme
-is honest evidence of what was played, and dishonest evidence of what the piece
-is, so its ``source`` records which take and which passage it came from.
+score; the rest are *derived from recorded takes*, and say so. A derived theme
+is evidence of what was played, not of what the piece is, so its ``source``
+records which take and which passage it came from.
 
 The real corpus, when it lands at :mod:`fp30x_studio.idcorpus`, is picked up by
 :func:`load_corpus` without any change here: it need only expose ``themes()``
@@ -199,13 +199,13 @@ STUB = ListCorpus([
        source="opening melody as measured from 2026-08-17-piece.fp30 "
               "(octave-doubled in the take; one octave kept here)"),
 
-    # chopin-nocturne-op62-1 removed 2026-08-20 (JPA-149). It was derived from
-    # 2026-08-17-session.fp30, so matching it was recall of a performance and
-    # not identification of a piece. The corpus now carries Op. 62 No. 1 from
-    # the Chopin Institute's scores (works 378 and 381, 729 and 845 notes), so
-    # the number this take produces is now measured against a score.
+    # No chopin-nocturne-op62-1 here. A theme derived from
+    # 2026-08-17-session.fp30 would make matching it recall of a performance,
+    # not identification of a piece. The corpus carries Op. 62 No. 1 from the
+    # Chopin Institute's scores (works 378 and 381, 729 and 845 notes), so the
+    # number this take produces is measured against a score.
 
-    # -- negative controls: real music, honestly unlabelled ----------------
+    # -- negative controls: real music, left unlabelled --------------------
     # The other three pieces in the 44-minute session take. They are here to
     # make the vote a real vote -- a matcher that cannot tell the Chopin from
     # a piece played twenty minutes earlier is not a matcher.

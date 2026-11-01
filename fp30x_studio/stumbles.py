@@ -34,14 +34,14 @@ Four shapes, in descending order of how confident the evidence is:
 
 Deliberately not detected
 -------------------------
-**Dissonance is not evidence.** He plays scales like G A B-flat C-sharp D
-E-flat F-sharp G (see the recording skill), so an interval-based detector would
-flag his own harmonic language as error, at volume. Every rule above keys on
+**Dissonance is not evidence.** Scales like G A B-flat C-sharp D E-flat F-sharp
+G are deliberate material, so an interval-based detector would flag the
+harmonic language itself as error, at volume. Every rule above keys on
 *duration and correction shape*, never on which pitch was played.
 
 **Timing irregularity is not evidence** either, for the same reason: rubato and
-a stumble are indistinguishable by tempo deviation alone, and he is composing,
-not performing a metered score.
+a stumble are indistinguishable by tempo deviation alone, and free playing has
+no metered score to deviate from.
 
 Removing one
 ------------

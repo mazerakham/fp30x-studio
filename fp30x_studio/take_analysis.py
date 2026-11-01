@@ -114,7 +114,7 @@ class TimingLattice:
     A capture front end can only ever be as good as the clock underneath it.
     :mod:`fp30x_studio.rawcapture` removed *our* 2.08 ms poll quantisation by
     taking CoreMIDI's driver timestamps, but that does not make the timestamps
-    continuous -- it makes them honest about whatever the source did.  This
+    continuous -- it makes them faithful to whatever the source did.  This
     class measures what the source did.
 
     ``step`` is the largest ``g`` such that (almost) every timestamp is a
@@ -149,7 +149,7 @@ def timing_lattice(cap: rawcapture.RawCapture) -> TimingLattice:
     robustly: a handful of off-lattice packets would drag a plain gcd down to
     1 ns, so the candidate steps are tried in descending order and the largest
     one explaining at least 99% of the gaps wins.  ``off_lattice`` then reports
-    the residue honestly rather than hiding it.
+    the residue rather than hiding it.
     """
     ns = np.array([r.ns for r in cap.records], dtype=np.int64)
     if ns.size < 2:
@@ -505,9 +505,8 @@ def _tidy(ax, *, xgrid: bool = True, ygrid: bool = False):
 def densest_window(perf, span=14.0):
     """The `span`-second window containing the most strike onsets.
 
-    The CLI used to default to (207.5, 221.5) — the answer for one take in
-    2026-08-17, frozen as a constant. On the 2026-08-22 evening capture that
-    window is silent and the figure crashed. Compute it.
+    A fixed window suits one take only; on another it can be silent, and the
+    figure then has nothing to draw. So it is computed.
     """
     ons = sorted(s.t_on for s in perf.strikes())
     if not ons:
@@ -1448,7 +1447,7 @@ def build_page(a: TakeAnalysis, out: Path, figures: dict[str, Path],
          for d, o, l, c in zip(m["delta"], m["omega"], m["lipschitz"], m["cantor"])
          if d in (0.005, 0.02, 0.1, 0.5, 2.0, 10.0)]))
     T.append(
-        '<div class="callout"><span class="k">the honest version</span>'
+        '<div class="callout"><span class="k">correction</span>'
         '<p>The Cantor picture was a good guess about the shape and it is wrong '
         'about the analysis. What the guess got right is that $F$ is a monotone, '
         'continuous, piecewise-affine function that is constant on the silences — '
@@ -1596,8 +1595,8 @@ def build_page(a: TakeAnalysis, out: Path, figures: dict[str, Path],
         "A comb histogram of inter-packet gaps and a residue scatter showing all "
         "packets on a 5 ms lattice."))
     T.append(
-        '<div class="callout"><span class="k">against the earlier benchmark, '
-        'honestly</span>'
+        '<div class="callout"><span class="k">against the earlier benchmark'
+        '</span>'
         '<p>The 0.0000 ms jitter figure recorded earlier was measured on a '
         'synthetic virtual source with no radio in the path. It measured the '
         'capture tool and it was right about the capture tool; it said nothing '

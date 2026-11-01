@@ -105,7 +105,7 @@ class _M21Score:
 
 
 def test_abc_tune_index_is_not_minted_as_an_opus():
-    """X: 401 in an ABC collection is a tune index, not "Op. 401" (JPA-150)."""
+    """X: 401 in an ABC collection is a tune index, not "Op. 401"."""
     src = SOURCES[0]
     abc = E.meta_from_music21(_M21Score(), Path("airdsAirs/book3.abc"), src)
     assert abc.opus == ""

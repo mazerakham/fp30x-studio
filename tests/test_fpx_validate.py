@@ -177,7 +177,7 @@ def test_a_digest_that_does_not_match_fails(tmp_path):
 
 
 def test_two_headers_in_one_file_is_multiple_streams(tmp_path):
-    """The 2026-08-19-usb defect: two writers, one -o path, O_APPEND."""
+    """Two writers appending to one -o path (O_APPEND) put two headers in one file."""
     root, bundle, clip, _ = conforming_bundle(tmp_path)
     clip.write_text(clip.read_text() + HEADER + BODY)
     rep = V.validate_bundle(bundle, root=root)
@@ -257,7 +257,7 @@ def test_a_clip_in_a_bundle_skips_the_name_check(tmp_path):
 
 
 def test_an_unreadable_midi_fails(tmp_path):
-    """The 2026-08-19-usb bundle: a 14-byte .mid published beside renders."""
+    """A 14-byte .mid published beside the renders must fail."""
     root, bundle, _, mid = conforming_bundle(tmp_path)
     mid.write_bytes(b"MThd\x00\x00\x00\x06\x00\x01\x00\x01\x01\xe0")
     rep = V.validate_bundle(bundle, root=root)
@@ -266,7 +266,7 @@ def test_an_unreadable_midi_fails(tmp_path):
 
 
 def test_a_midi_that_drops_notes_fails(tmp_path):
-    """JPA-149: nothing compared the export to the take it came from."""
+    """The export is compared to the take it came from, note-on for note-on."""
     root, bundle, _, mid = conforming_bundle(tmp_path)
     write_midi(mid, notes=2)      # window holds one note-on, the .mid has two
     rep = V.validate_bundle(bundle, root=root)

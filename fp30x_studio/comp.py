@@ -2,10 +2,10 @@ r"""Choosing a take per bar, and splicing the choices into one performance.
 
 The problem
 -----------
-He can play the whole rag and he cannot play it cleanly end to end. Several
-passes exist; different ones are good in different places. A release wants the
-best of each, which means a selection function from bar to pass and a splice
-that does not announce itself.
+A whole rag can be played through without being played cleanly end to end.
+Several passes exist; different ones are good in different places. A release
+wants the best of each, which means a selection function from bar to pass and a
+splice that does not announce itself.
 
 Why the weights are indicators
 ------------------------------
@@ -159,9 +159,9 @@ def candidates(maps: dict[str, dict], *, size: int = GROUP,
                per_pass: int = 3) -> dict[int, list[Candidate]]:
     """Every offer for every bar group, keyed by group index.
 
-    A map over a whole take holds *several* runs through the piece -- he plays
-    it three times in a sitting -- and those are different performances of the
-    same bars, so each is its own candidate rather than one winning on behalf of
+    A map over a whole take can hold *several* runs through the piece, and
+    those are different performances of the same bars, so each is its own
+    candidate rather than one winning on behalf of
     the file it came from. At most ``per_pass`` runs per take per group, longest
     match first, so a group that was practised twenty times does not produce
     twenty buttons.

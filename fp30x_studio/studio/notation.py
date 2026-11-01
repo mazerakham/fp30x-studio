@@ -1,8 +1,8 @@
-"""Engraved notation for a measure range, so he can find his place on the page.
+"""Engraved notation for a measure range, so the player can find the place on the page.
 
-The studio asks him to play bar 137. That instruction is useless without the
-music: he needs to see the bar, in the key, with its clefs, to know where to put
-his hands and which page to turn to.
+The studio asks for bar 137. That instruction is useless without the music: the
+player needs to see the bar, in the key, with its clefs, to know where to put
+their hands and which page to turn to.
 
 Rendering is **not** done in the browser. Verovio has a JavaScript build, but a
 page that depends on it stops working the day the vendored copy goes missing,
