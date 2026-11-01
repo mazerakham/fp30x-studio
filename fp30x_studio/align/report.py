@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .correspond import Correspondence, correspond, timing_prior
+from .correspond import GAP, Correspondence, correspond, timing_prior
 from .events import LATTICE_S, Segment
 from .warp import (SweepPoint, Warp, fit_warp, gcv_lambda, lambda_sweep,
                    straight_line)
@@ -131,6 +131,9 @@ class Alignment:
 def align_segments(seg_a: Segment | tuple, seg_b: Segment | tuple, *,
                    lam: float | None = None, lambdas=DEFAULT_LAMBDAS,
                    min_slope_frac: float = 0.05, refine: bool = True,
+                   smoothness: str = "rate",
+                   gap: float = GAP, gap_extend: float | None = None,
+                   weight_a=None, weight_b=None,
                    label_a: str = "A", label_b: str = "B") -> Alignment:
     r"""Align two attempts, fit :math:`\varphi`, and sweep :math:`\lambda`.
 
@@ -157,15 +160,25 @@ def align_segments(seg_a: Segment | tuple, seg_b: Segment | tuple, *,
     of the grid, which is the circularity announcing itself. ``gcv_interior``
     records whether that happened. Pass ``lam=`` to override the selection, or
     ``refine=False`` to skip step 3 and keep GCV strictly self-consistent.
+    
+    ``gap``, ``gap_extend`` and the per-event ``weight_a`` / ``weight_b`` are
+    handed to :func:`~.correspond.correspond` on **both** passes, so the
+    refinement is judged against the same cut model as the first pass rather
+    than a different one. ``smoothness`` selects the penalty in
+    :func:`~.warp.fit_warp`; both extra options default to the behaviour that
+    was here before them.
     """
     ea = seg_a.shifted() if isinstance(seg_a, Segment) else tuple(seg_a)
     eb = seg_b.shifted() if isinstance(seg_b, Segment) else tuple(seg_b)
 
-    first = correspond(ea, eb)
+    opts = dict(gap=gap, gap_extend=gap_extend,
+                weight_a=weight_a, weight_b=weight_b)
+    first = correspond(ea, eb, **opts)
     if len(first.pairs) < 3:
         raise ValueError("too few matched onsets to fit a warp")
 
-    sweep0 = lambda_sweep(first.t, first.s, lambdas, min_slope_frac=min_slope_frac)
+    sweep0 = lambda_sweep(first.t, first.s, lambdas,
+                          min_slope_frac=min_slope_frac, smoothness=smoothness)
     i_gcv = gcv_lambda(sweep0)
     lam_gcv = sweep0[i_gcv].lam
 
@@ -174,7 +187,7 @@ def align_segments(seg_a: Segment | tuple, seg_b: Segment | tuple, *,
         prior = timing_prior(ea, eb, sweep0[i_gcv].warp,
                              t0=first.t[0], s0=first.s[0])
         try:
-            cand = correspond(ea, eb, prior=prior)
+            cand = correspond(ea, eb, prior=prior, **opts)
         except ValueError:
             cand = None
         # Kept only if it does not lose pairings: a refinement must never
@@ -183,7 +196,8 @@ def align_segments(seg_a: Segment | tuple, seg_b: Segment | tuple, *,
             corr, refined = cand, True
 
     t, s = corr.t, corr.s
-    sweep = lambda_sweep(t, s, lambdas, min_slope_frac=min_slope_frac)
+    sweep = lambda_sweep(t, s, lambdas, min_slope_frac=min_slope_frac,
+                         smoothness=smoothness)
     chosen = int(np.argmin(np.abs(np.log([p.lam for p in sweep]) - np.log(lam_gcv))))
     corner = l_curve_corner(sweep)
     g = gcv_lambda(sweep)
@@ -193,8 +207,10 @@ def align_segments(seg_a: Segment | tuple, seg_b: Segment | tuple, *,
         lam = sweep[chosen].lam
         warp = sweep[chosen].warp
     else:
-        warp = fit_warp(t, s, float(lam), min_slope_frac=min_slope_frac)
-    null = straight_line(warp.T1, warp.T2, warp.data_t, warp.data_s, lam=lam)
+        warp = fit_warp(t, s, float(lam), min_slope_frac=min_slope_frac,
+                        smoothness=smoothness)
+    null = straight_line(warp.T1, warp.T2, warp.data_t, warp.data_s, lam=lam,
+                         smoothness=smoothness)
     return Alignment(correspondence=corr, warp=warp, null=null, sweep=sweep,
                      lam=float(lam), corner=corner, chosen=chosen,
                      first_pass=first, refined=refined,

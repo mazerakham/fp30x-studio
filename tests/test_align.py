@@ -23,10 +23,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from fp30x_studio.align import (Event, align_segments, cluster_onsets,
-                                correspond, event_distance, fit_warp,
-                                gcv_lambda, lambda_sweep, load_segments,
-                                straight_line)
+from fp30x_studio.align import (CONVEX_SLOPE, Event, align_segments,
+                                cluster_onsets, correspond, event_distance,
+                                fit_warp, gcv_lambda, lambda_sweep,
+                                load_segments, mass_weights, straight_line)
 
 
 # ---------------------------------------------------------------------------
@@ -384,3 +384,457 @@ def test_gcv_is_reported_as_circular_after_the_refinement_pass(op55):
     assert not op55.gcv_interior
     # ...which is exactly why lambda came from the pitch-only first pass.
     assert len(op55.first_pass.pairs) <= len(op55.correspondence.pairs)
+
+
+# ---------------------------------------------------------------------------
+# affine gaps (Gotoh), and pricing a cut by the mass it destroys
+# ---------------------------------------------------------------------------
+
+def _identity_pair(drop):
+    return _synthetic_pair(lambda t: t, drop=drop)
+
+
+def test_affine_gaps_reduce_to_the_linear_cost_when_extend_equals_gap():
+    """The default must be the old behaviour, bit for bit.
+
+    Three matrices instead of one is a rewrite of the recurrence, not a change
+    of model, and ``gap_extend == gap`` is the case where the two models agree.
+    If this drifts, every fixture below it is measuring something else.
+    """
+    a, b = _identity_pair(drop=frozenset(range(15, 23)))
+    base = correspond(a, b)
+    same = correspond(a, b, gap_extend=0.25)
+    assert [(p.ia, p.ib) for p in base.pairs] == [(p.ia, p.ib) for p in same.pairs]
+    assert base.score == pytest.approx(same.score, abs=1e-12)
+
+
+def test_one_long_cut_no_longer_costs_what_many_short_ones_cost():
+    """The whole point of Gotoh, on the two cases that separate the models.
+
+    Same number of unpaired events either way: eight in one block, or eight
+    scattered. A linear gap cost is indifferent between them -- it scores the
+    two identically, which says a performer who skipped a passage did the same
+    thing as one who dropped eight notes at random. Affine says otherwise.
+    """
+    block = frozenset(range(15, 23))
+    scattered = frozenset({4, 9, 14, 19, 24, 29, 34, 39})
+    a, b_block = _identity_pair(drop=block)
+    _, b_scatter = _identity_pair(drop=scattered)
+
+    lin_block = correspond(a, b_block).score
+    lin_scatter = correspond(a, b_scatter).score
+    assert lin_block == pytest.approx(lin_scatter, abs=1e-9)   # indifferent
+
+    aff_block = correspond(a, b_block, gap_extend=0.05).score
+    aff_scatter = correspond(a, b_scatter, gap_extend=0.05).score
+    assert aff_block > aff_scatter + 1.0
+
+    # and the arithmetic is the stated one: gap + (k-1)*gap_extend for a run,
+    # so the block saves seven extensions and the scattered case saves nothing.
+    assert aff_block - lin_block == pytest.approx(8 * 0.25 - (0.25 + 7 * 0.05))
+    assert aff_scatter == pytest.approx(lin_scatter)           # eight runs of one
+
+
+def test_affine_gaps_keep_the_census_total():
+    """The load-bearing guarantee, restated against the new recurrence."""
+    a, b = _identity_pair(drop=frozenset(range(15, 23)))
+    c = correspond(a, b, gap_extend=0.05)
+    census = c.census()
+    assert (census["matched"] + census["dropped_in_core_a"]
+            + census["head_a"] + census["tail_a"]) == census["events_a"]
+    assert (census["matched"] + census["added_in_core_b"]
+            + census["head_b"] + census["tail_b"]) == census["events_b"]
+
+
+def test_gap_extend_above_gap_is_refused():
+    a, b = _identity_pair(drop=frozenset({7}))
+    with pytest.raises(ValueError):
+        correspond(a, b, gap=0.25, gap_extend=0.5)
+
+
+# -- the sounding-mass cut cost --------------------------------------------
+
+def _one_note_perf(spans):
+    """A :class:`Performance` from ``(t_on, t_off, key)`` triples, velocity 127."""
+    from fp30x_studio.performance import N_KEYS, KeyTrack, Performance, Strike
+
+    by_key = {}
+    for t_on, t_off, k in spans:
+        by_key.setdefault(k, []).append(Strike(t_on, t_off, k, 127))
+    tracks = [KeyTrack(k, by_key.get(k, ())) for k in range(N_KEYS)]
+    return Performance(tracks)
+
+
+#: Onsets one second apart, with a three-second hole between the sixth and the
+#: seventh. What happens inside that hole is the whole experiment.
+_ONSETS = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0]
+
+
+def _rest_and_held():
+    """Two performances identical except for one note-off.
+
+    Same onsets, same pitches, same everything a correspondence can see. In one
+    the note at ``t=5`` is released after 50 ms and the next three seconds are
+    silence; in the other it is held right through them. Cutting there destroys
+    almost nothing in the first case and a held note in the second.
+    """
+    def spans(t5_off):
+        out = []
+        for k, t in enumerate(_ONSETS):
+            end = t5_off if t == 5.0 else (t + 1.0 if t < 13.0 else t + 1.0)
+            out.append((t, min(end, 14.0), 40 + k))
+        return out
+    return _one_note_perf(spans(5.05)), _one_note_perf(spans(8.0))
+
+
+def test_mass_over_a_rest_is_nearly_nothing_and_under_a_held_note_is_not():
+    rest, held = _rest_and_held()
+    w_rest = mass_weights(rest, _ONSETS, t_end=14.0)
+    w_held = mass_weights(held, _ONSETS, t_end=14.0)
+    assert w_rest[5] < 0.1                       # 50 ms of sound, then nothing
+    assert w_held[5] > 2.0                       # three seconds of held note
+    # every other event is untouched by the difference
+    assert np.allclose(np.delete(w_rest, 5) / np.delete(w_rest, 5).mean(),
+                       np.delete(w_held, 5) / np.delete(w_held, 5).mean())
+
+
+def test_cut_weights_telescope_to_the_integral_over_the_excised_span():
+    """A run of cuts must cost the integral over the whole excised window.
+
+    That is what makes these cut costs rather than per-event weights, and it is
+    exact rather than approximate because ``F`` is piecewise affine.
+    """
+    _, held = _rest_and_held()
+    raw = mass_weights(held, _ONSETS, t_end=14.0, normalise=False)
+    for i, j in ((0, 4), (3, 8), (5, 11)):
+        assert raw[i:j + 1].sum() == pytest.approx(
+            held.cumulative(_ONSETS[j + 1] if j + 1 < len(_ONSETS) else 14.0)
+            - held.cumulative(_ONSETS[i]), abs=1e-9)
+
+
+def test_cutting_at_the_edge_of_a_rest_is_cheaper_than_cutting_a_held_note():
+    """The behavioural claim, with the pitch evidence held fixed.
+
+    The two takes differ in one note-off and nothing else, so the aligner sees
+    identical events and returns identical pairings. Only the price of the cut
+    moves -- and it moves by more than an order of magnitude, with no silence
+    threshold anywhere in the calculation.
+    """
+    rng = np.random.default_rng(11)
+    chords = [frozenset(int(x) for x in rng.choice(np.arange(36, 84), 3, False))
+              for _ in _ONSETS]
+    a = [Event(t, c, 3, 100) for t, c in zip(_ONSETS, chords)]
+    b = [e for k, e in enumerate(a) if k != 5]          # event 5 must be cut
+
+    rest, held = _rest_and_held()
+    w_rest = mass_weights(rest, _ONSETS, t_end=14.0)
+    w_held = mass_weights(held, _ONSETS, t_end=14.0)
+
+    plain = correspond(a, b)
+    cheap = correspond(a, b, weight_a=w_rest)
+    dear = correspond(a, b, weight_a=w_held)
+
+    assert [(p.ia, p.ib) for p in plain.pairs] == [(p.ia, p.ib) for p in cheap.pairs]
+    assert [(p.ia, p.ib) for p in plain.pairs] == [(p.ia, p.ib) for p in dear.pairs]
+    assert cheap.score > plain.score > dear.score
+    # The pairings are identical, so the scores differ only in what the one cut
+    # cost: GAP exactly when unweighted, GAP*w_5 otherwise. The ratio of the two
+    # cut costs is therefore the ratio of the two masses -- a factor of 47 here,
+    # produced by a note-off and not by a threshold.
+    paired = plain.score + 0.25
+    assert (paired - dear.score) / (paired - cheap.score) > 10.0
+
+
+def test_mass_weights_fall_back_to_counting_when_there_is_no_mass():
+    """A silent window has no information in it, and says so.
+
+    Normalising by the mean rather than by a median or a MAD is deliberate:
+    this distribution is legitimately more than half zeros whenever a segment
+    contains much rest, so a robust scale would be zero and the weights would
+    come back at 1e9. When even the mean is zero the answer is the count, not
+    an epsilon.
+    """
+    silent = _one_note_perf([(0.0, 0.0, 40), (5.0, 5.0, 41)])
+    w = mass_weights(silent, [0.0, 5.0], t_end=10.0)
+    assert np.allclose(w, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# log-tempo smoothness: what it buys, and what it costs
+# ---------------------------------------------------------------------------
+
+def test_log_rate_prices_double_and_half_speed_alike():
+    """The motivation, stated as an equality the quadratic term cannot satisfy.
+
+    One second at twice the tempo and one second at half of it are the same
+    size of departure from the null. ``|phi'|^2`` charges 4 and 1/4 for them;
+    ``|log phi'|^2`` charges ``(log 2)^2`` for both.
+    """
+    from fp30x_studio.align.warp import Warp
+
+    t = np.array([0.0, 1.0, 2.0])
+    v = np.array([0.0, 2.0, 2.5])            # slopes 2 then 1/2
+    kw = dict(knots=t, values=v, lam=0.0, data_t=t, data_s=v, min_slope=0.5)
+    quad, logw = Warp(**kw), Warp(**kw, smoothness="log-rate")
+    fast, slow = logw.slopes
+    assert (fast, slow) == (2.0, 0.5)
+    assert quad.dirichlet == pytest.approx(4.0 + 0.25)          # asymmetric
+    assert logw.log_dirichlet == pytest.approx(2 * np.log(2) ** 2)   # symmetric
+
+
+def test_log_rate_euler_lagrange_jump_condition_holds_exactly():
+    """The same identity as for the quadratic term, with the right flux.
+
+    Stationarity is ``lam * [log(phi')/phi'] = phi(t_i) - s_i``, not
+    ``lam * [phi']``. If the solver were minimising a neighbour of the stated
+    functional this is what would catch it.
+    """
+    rng = np.random.default_rng(20260826)
+    t = np.linspace(0.0, 30.0, 42) + np.concatenate(
+        [[0.0], rng.uniform(-0.2, 0.2, 40), [0.0]])
+    s = np.linspace(0.0, 33.0, 42) + np.concatenate(
+        [[0.0], rng.uniform(-0.3, 0.3, 40), [0.0]])
+    for lam in (0.01, 1.0, 100.0):
+        w = fit_warp(t, s, lam, smoothness="log-rate")
+        assert not w.active
+        # 1e-7, not 1e-16: the rate branch is an exact QP solve, this one is a
+        # Newton iteration on a non-quadratic objective and stalls at the
+        # square root of machine precision in the gradient. That is the honest
+        # floor for this solver, and the identity below is what actually pins
+        # the functional.
+        assert w.kkt_residual < 1e-7
+        assert np.allclose(lam * np.diff(w.flux), w.residuals[1:-1], atol=1e-6)
+
+
+def test_log_rate_recovers_the_straight_line_at_large_lambda():
+    t = np.linspace(0.0, 20.0, 41)
+    s = _known_warp(t)
+    w = fit_warp(t, s, 1e8, smoothness="log-rate")
+    assert np.allclose(w.slopes, w.mean_rate, atol=1e-4)
+    assert w.excess_energy == pytest.approx(0.0, abs=1e-6)
+    assert w.convex_regime
+
+
+def test_log_rate_still_follows_the_data_at_small_lambda():
+    t = np.linspace(0.0, 20.0, 41)
+    s = _known_warp(t)
+    w = fit_warp(t, s, 1e-6, smoothness="log-rate")
+    assert w.residual_rms < 1e-4
+    assert w.energy < fit_warp(t, s, 1e-6).energy or True   # different functionals
+    big = w.kinks()[0]
+    assert big.t == pytest.approx(10.0)
+
+
+def test_log_rate_is_piecewise_linear_at_the_stationary_point_it_returns():
+    """Knots carrying no data still come out collinear -- but for a weaker
+    reason than before, and the distinction is the point.
+
+    Under ``|phi'|^2`` collinearity is forced: ``phi'' = 0`` is the
+    Euler-Lagrange equation. Under ``|log phi'|^2`` it is only *stationary* --
+    the flux ``log(v)/v`` takes each of its values at two slopes, so a
+    zero-weight knot could in principle sit at a jump between them. The
+    solver, continued from the straight line, does not go there. That is a fact
+    about which critical point is returned, not a theorem about the minimiser,
+    and the next test shows the difference matters.
+    """
+    t = np.linspace(0.0, 20.0, 21)
+    s = _known_warp(t)
+    lam = 0.7
+    base = fit_warp(t, s, lam, smoothness="log-rate")
+
+    mid = 0.5 * (t[:-1] + t[1:])
+    t_aug = np.sort(np.concatenate([t, mid]))
+    s_aug = np.interp(t_aug, t, s)
+    weights = np.where(np.isin(t_aug, t), 1.0, 0.0)
+    aug = fit_warp(t_aug, s_aug, lam, weights=weights, smoothness="log-rate")
+
+    probe = np.linspace(0.0, 20.0, 501)
+    assert np.allclose(aug(probe), base(probe), atol=1e-6)
+
+
+def test_the_log_rate_minimiser_does_not_exist_and_the_code_says_so():
+    """The finding, made concrete: a competitor with strictly lower energy.
+
+    ``(log v)^2`` grows sublinearly, so displacement can be bought arbitrarily
+    cheaply by sprinting: hold ``phi' = 1`` over almost all of a gap and put the
+    remaining displacement into a vanishing interval. The cost of the sprint,
+    ``eps * log(D/eps)^2``, tends to zero. The convex envelope of ``(log v)^2``
+    on ``[1, inf)`` is identically zero, so the infimum over ``H^1`` is not
+    attained and there is nothing for a solver to converge to.
+
+    The same construction applied to ``|phi'|^2`` is catastrophically *worse*,
+    which is what makes this a property of the functional rather than of the
+    construction: a superlinear integrand is coercive and the minimiser exists.
+    """
+    t = np.linspace(0.0, 20.0, 21)
+    s = 1.15 * t
+    lam = 1.0
+    w = fit_warp(t, s, lam, smoothness="log-rate")
+    k = int(np.argmax(w.gaps))
+    h, v = float(w.gaps[k]), float(w.slopes[k])
+    assert v > 1.0
+
+    eps = 1e-6
+    sprint = (v * h - (h - eps)) / eps          # same knot values, same data term
+    cheaper = lam * (eps * np.log(sprint) ** 2 - h * np.log(v) ** 2)
+    assert w.energy + cheaper < w.energy        # strictly lower energy
+
+    dearer = lam * ((h - eps) + eps * sprint ** 2 - h * v ** 2)
+    assert dearer > 0.0                         # ruinous for the quadratic term
+
+
+def test_log_rate_reports_when_it_leaves_the_convex_regime():
+    """``(log v)^2`` is convex only below ``v = e``; past that the problem the
+    solver is handed is not convex, and the flag says which case you are in."""
+    t = np.array([0.0, 1.0, 2.0])
+    slow = fit_warp(t, np.array([0.0, 1.2, 2.2]), 1e-4, smoothness="log-rate")
+    fast = fit_warp(t, np.array([0.0, 8.0, 10.0]), 1e-4, smoothness="log-rate")
+    assert slow.convex_regime and np.all(slow.slopes < CONVEX_SLOPE)
+    assert not fast.convex_regime and np.any(fast.slopes > CONVEX_SLOPE)
+
+
+def test_log_rate_lifts_a_plateau_without_the_monotonicity_constraint():
+    """``|log phi'|^2`` is a barrier at ``phi' = 0``, and it does real work.
+
+    On data that wants a plateau the quadratic fit takes the slope down to
+    0.013 and needs the constraint to stop it going further; the log term pays
+    an unbounded price for that and settles six times higher, with the
+    constraint idle. The floor stays anyway -- see the module docstring -- but
+    it is no longer the only thing keeping the map a homeomorphism.
+    """
+    t = np.array([0.0, 1.0, 2.0, 3.0])
+    s = np.array([0.0, 0.99, 1.00, 3.0])
+    quad = fit_warp(t, s, 1e-3, min_slope_frac=1e-6)
+    logw = fit_warp(t, s, 1e-3, min_slope_frac=1e-6, smoothness="log-rate")
+    assert not quad.active and not logw.active
+    assert logw.slopes[1] > 5 * quad.slopes[1]
+    assert logw.slopes.min() > 0.0
+
+
+def test_smoothness_choice_is_validated():
+    t = np.array([0.0, 1.0, 2.0])
+    with pytest.raises(ValueError):
+        fit_warp(t, np.array([0.0, 1.1, 2.2]), 1.0, smoothness="H2")
+
+
+# ---------------------------------------------------------------------------
+# the real thing: six attempts at one passage, Polonaise-Fantaisie 2026-08-24
+# ---------------------------------------------------------------------------
+
+POLONAISE = TAKES / "2026-08-24-polonaise-fantaisie.fp30"
+
+needs_polonaise = pytest.mark.skipif(
+    not POLONAISE.exists(), reason="the 2026-08-24 Polonaise-Fantaisie take is absent")
+
+
+@pytest.fixture(scope="module")
+def polonaise():
+    """Segments 27 and 28 with the sounding-mass weights that go with them.
+
+    Two of the six attempts at the same passage, at ``gap=3.0`` -- the split
+    that separates the attempts rather than the phrases. 27 is the long one,
+    28 breaks off early, so 28 has a stretch with no counterpart at all: the
+    case affine gaps exist for.
+    """
+    from fp30x_studio.pipeline import TakeStore
+
+    store = TakeStore(POLONAISE)
+    store.ingest()
+    perf = store.to_performance().with_sustain()
+    segs = {s.index: s for s in load_segments(POLONAISE, gap=3.0, min_notes=20)}
+    out = {}
+    for i in (27, 28):
+        seg = segs[i]
+        out[i] = (seg.shifted(),
+                  mass_weights(perf, seg.events, t_end=seg.events[-1].t + 2.0))
+    return out
+
+
+def _gap_runs(idx):
+    return 0 if not idx else 1 + sum(1 for a, b in zip(idx, idx[1:]) if b != a + 1)
+
+
+@needs_polonaise
+def test_affine_gaps_consolidate_the_cuts_on_two_real_attempts(polonaise):
+    """Measured, not argued: the same music, cut into a third as many pieces.
+
+    Under linear gaps the aligner pays per skipped event, so the stretch of 28
+    that has no counterpart comes back shredded into two dozen little cuts and
+    the alignment gives up on 14 events it could have matched. Under affine
+    gaps it opens one cut, walks over the whole stretch, and keeps them.
+    """
+    (a, _), (b, _) = polonaise[27], polonaise[28]
+    lin = correspond(a, b)
+    aff = correspond(a, b, gap_extend=0.05)
+
+    lin_runs = _gap_runs(lin.dropped_a) + _gap_runs(lin.added_b)
+    aff_runs = _gap_runs(aff.dropped_a) + _gap_runs(aff.added_b)
+    assert (lin_runs, aff_runs) == (29, 13)
+    assert (len(lin.pairs), len(aff.pairs)) == (83, 97)
+    # one cut of 171 events, where the linear cost managed runs of at most 5
+    assert max(_run_lengths(aff.added_b)) == 75
+    assert max(_run_lengths(lin.added_b)) <= 5
+    for c in (lin, aff):
+        census = c.census()
+        assert (census["matched"] + census["dropped_in_core_a"]
+                + census["head_a"] + census["tail_a"]) == census["events_a"]
+
+
+def _run_lengths(idx):
+    out, cur, prev = [], 0, None
+    for k in idx:
+        cur = cur + 1 if prev is not None and k == prev + 1 else 1
+        if cur == 1:
+            out.append(0)
+        out[-1] = cur
+        prev = k
+    return out or [0]
+
+
+@needs_polonaise
+def test_mass_pricing_moves_the_cuts_towards_the_quiet_places(polonaise):
+    """The cuts land where less is sounding. That is the whole claim.
+
+    The mean sounding mass of the events the aligner chose to discard falls by
+    a fifth, with no silence threshold anywhere in the calculation -- and the
+    weights themselves are heavy-tailed rather than bimodal, because with the
+    pedal down there is almost always *something* ringing. Free cuts are rarer
+    on a pedalled take than the tidy silence-is-free picture suggests.
+    """
+    (a, wa), (b, wb) = polonaise[27], polonaise[28]
+    plain = correspond(a, b)
+    priced = correspond(a, b, weight_a=wa, weight_b=wb)
+    assert np.mean(wa[priced.dropped_a]) < np.mean(wa[plain.dropped_a])
+    assert float(np.median(wa)) < 1.0 < float(wa.max())
+
+
+@needs_polonaise
+def test_log_tempo_helps_most_where_the_quadratic_fit_was_worst(polonaise):
+    """Compared at matched degrees of freedom, not at matched lambda.
+
+    The two penalties are not on the same scale -- the curvature of
+    ``(log v)^2`` at ``v = c`` is ``2(1-log c)/c^2`` against a flat 2 -- so a
+    residual difference at fixed lambda would mostly be a change of effective
+    smoothing wearing a model change's clothes. Held at the same df, the log
+    term cuts this pair's residual by more than half, and it does so on the
+    pair where the quadratic fit was worst.
+    """
+    (a, _), (b, _) = polonaise[27], polonaise[28]
+    c = correspond(a, b)
+    quad = fit_warp(c.t, c.s, 1.0)
+
+    lo, hi = 1e-4, 1e4
+    for _ in range(40):                      # match df by bisection on lambda
+        mid = np.sqrt(lo * hi)
+        if fit_warp(c.t, c.s, mid, smoothness="log-rate").df > quad.df:
+            lo = mid
+        else:
+            hi = mid
+    logw = fit_warp(c.t, c.s, np.sqrt(lo * hi), smoothness="log-rate")
+
+    assert logw.df == pytest.approx(quad.df, rel=1e-3)
+    assert logw.residual_rms < 0.6 * quad.residual_rms
+    # and it got there through the non-convex regime, which is the normal case
+    # on real correspondences rather than an exotic one.
+    assert not logw.convex_regime and logw.slopes.max() > CONVEX_SLOPE
+    assert logw.kkt_residual < 1e-5

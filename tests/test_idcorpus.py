@@ -90,6 +90,30 @@ def test_display_does_not_repeat_the_opus_already_in_the_title():
 
 # ------------------------------------------------------------ Plaine & Easie
 
+class _M21Meta:
+    composer = None
+    title = "The Job of Journey Work"
+    movementName = None
+    movementNumber = None
+
+    def all(self):
+        return [("number", "401"), ("title", self.title)]
+
+
+class _M21Score:
+    metadata = _M21Meta()
+
+
+def test_abc_tune_index_is_not_minted_as_an_opus():
+    """X: 401 in an ABC collection is a tune index, not "Op. 401" (JPA-150)."""
+    src = SOURCES[0]
+    abc = E.meta_from_music21(_M21Score(), Path("airdsAirs/book3.abc"), src)
+    assert abc.opus == ""
+    assert "Op." not in abc.display()
+    xml = E.meta_from_music21(_M21Score(), Path("some/work.mxl"), src)
+    assert xml.opus == "Op. 401"
+
+
 def test_pae_middle_c_and_octave_marks():
     p, _ = pae.decode("4,C'C''C'''C")
     assert p == [48, 60, 72, 84]

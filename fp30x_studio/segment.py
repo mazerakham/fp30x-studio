@@ -52,6 +52,10 @@ GAP_S = 4.0
 #: can decay instead of being cut off. Rendering stops at the end of the file.
 TAIL_S = 9.0
 
+#: Seconds appended AFTER the final release, so the damped decay and any
+#: reverb tail have somewhere to go. See close_tail.
+RELEASE_ROOM_S = 6.0
+
 
 def close_tail(track, mido, held, pedal_down, tpb, tempo, tail_s=TAIL_S):
     """End the file without damping what the performance left ringing.
@@ -82,12 +86,29 @@ def close_tail(track, mido, held, pedal_down, tpb, tempo, tail_s=TAIL_S):
         for n in sorted(held):
             track.append(mido.Message("note_off", note=n, velocity=64, time=0))
         track.append(silence)
+        track.append(mido.Message("control_change", control=64, value=0,
+                                  time=int(mido.second2tick(RELEASE_ROOM_S,
+                                                            tpb, tempo))))
     else:
-        # hold everything, let it ring, then lift
-        track.append(silence)
-        for n in sorted(held):
-            track.append(mido.Message("note_off", note=n, velocity=64, time=0))
-        track.append(mido.Message("control_change", control=64, value=0, time=0))
+        # Hold everything and never lift. The performance did not contain a
+        # pedal release here -- the clip ends before one -- so synthesising
+        # any release is inventing an event, and every way of inventing it
+        # sounds wrong. Measured on Op. 9 No. 2 through jRhodes3, last 250 ms
+        # window before the end, 2026-09-05:
+        #
+        #   lift at the end of the tail   -40.5 dB drop  (was the shipped one)
+        #   lift, then 6 s of room        -17.3 dB drop  (room only exposed it)
+        #   CC64 tapered 127->0 over 2.5s -40.3 dB drop  (SF2 sustain is a
+        #                                   switch at 64, so a ramp does
+        #                                   nothing but cross the threshold)
+        #   no lift at all                 -1 dB/window, smooth to the floor
+        #
+        # Jake heard the shipped version as the last note played "staccato".
+        # So: let it ring and end the file. A renderer that stops at the last
+        # event renders the decay; nothing is left hanging afterwards to hang.
+        track.append(mido.Message("control_change", control=64, value=127,
+                                  time=int(mido.second2tick(
+                                      tail_s + RELEASE_ROOM_S, tpb, tempo))))
 
 
 def mmss(s: float) -> str:
