@@ -118,8 +118,8 @@ def intervals(events, *, span: int = 13, both_voices: bool = True) -> np.ndarray
     Measured result, recorded so the negative is not re-derived: **on its own
     this is the worst feature tested** — it never reached precision 1.0 at any
     margin, topping out at 0.74, worse than the 12-dimensional chroma it was
-    meant to improve on. It buys an invariance these takes do not need (Jake
-    does not practise transposed) and pays for it by discarding absolute pitch,
+    meant to improve on. It buys an invariance these takes do not need (none of
+    them is played transposed) and pays for it by discarding absolute pitch,
     the most discriminating thing an event carries. Its use is as a
     concatenated *addition* to :func:`pitch_full`, where the contour supplies
     the order information a bag-of-keys row cannot: that combination is the
