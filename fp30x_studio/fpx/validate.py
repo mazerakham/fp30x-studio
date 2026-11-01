@@ -10,7 +10,7 @@ numbers rather than opinions: every column is an ``FPX-n`` you can look up.
 What it does not check
 ----------------------
 Most of the specification is not decidable from a directory listing. FPX-90
-(Jake's verdict outranks the machine) is a rule about who wins an argument;
+(the listener's verdict outranks the machine) is a rule about who wins an argument;
 §7 is a migration plan; FPX-110 (immutability) is a claim about the future.
 What is checked is listed in :data:`CHECKS`, and a requirement that cannot be
 decided for a given bundle reports ``-`` rather than a guess.

@@ -45,8 +45,8 @@ are recorded so that conversion back to raw ticks is auditable, and the
 ``anchor_mach_ns``/``anchor_unix_ns`` pair fixes one instant on both the mach
 and the wall clock so a take can be placed in civil time.
 
-Reading the trailer honestly
-----------------------------
+Reading the trailer
+-------------------
 ``# end`` is written only on a clean stop. :attr:`RawCapture.complete` is False
 without it, which is the file telling you it was cut short rather than you
 assuming it was not.

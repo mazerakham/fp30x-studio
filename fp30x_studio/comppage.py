@@ -5,7 +5,7 @@ the same four bars differ in what was played and not in how loud they were
 normalised -- the comparison the page exists for.
 
 The selection is the deliverable, so it leaves the browser: it lives in
-``localStorage`` while he works and downloads as ``selection.json``, which is
+``localStorage`` while the comp is chosen and downloads as ``selection.json``, which is
 what :func:`fp30x_studio.comp.assemble` reads. Nothing here depends on a server
 that outlives the session.
 """

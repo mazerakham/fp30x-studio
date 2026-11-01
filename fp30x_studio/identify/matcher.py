@@ -366,7 +366,7 @@ def score(c: Candidate) -> float:
 
     The product, not the mean: a weak factor must be able to veto. A corpus
     holding two *different* pieces that open alike will never clear ``clear``,
-    which is right -- the honest answer there is "one of these two", not a coin
+    which is right -- the correct answer there is "one of these two", not a coin
     toss. Two entries for the *same* piece are not rivals at all; see
     :attr:`~.corpus.Theme.key`.
     """

@@ -1,9 +1,9 @@
-r"""From a played passage to a score: the path for his own compositions.
+r"""From a played passage to a score, for original compositions.
 
 Everything else in this package that produces notation starts from a score that
 already exists (:mod:`fp30x_studio.studio.notation` engraves kern). An original
 has no score; the performance is the only source, so the score has to be
-*inferred* from it, and every inference here is a choice he may overrule. The
+*inferred* from it, and every inference here is a choice the composer may overrule. The
 raw clip is never touched -- this writes new, derived files beside it.
 
 The pipeline
@@ -258,7 +258,7 @@ def speller(key):
 # ------------------------------------------------------------------ assembly
 
 def transcribe(src, out, *, meter=None, alpha=6.0, ghost_vel=12, title=None,
-               pedal=None, split=55, key=None):
+               pedal=None, split=55, key=None, composer=None):
     import music21 as m21
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -342,7 +342,8 @@ def transcribe(src, out, *, meter=None, alpha=6.0, ghost_vel=12, title=None,
     score = m21.stream.Score()
     score.metadata = m21.metadata.Metadata()
     score.metadata.title = title or Path(src).stem
-    score.metadata.composer = "Jake Mirra"
+    if composer:
+        score.metadata.composer = composer
     total = max(max(c["end"] for c in d.values()) for d in parts.values() if d)
     start = min(min(d) for d in parts.values() if d)
     for h, clef in ((H.RIGHT, m21.clef.TrebleClef()), (H.LEFT, m21.clef.BassClef())):
@@ -435,7 +436,7 @@ def _write_clean_midi(parts, bpm, start, path):
             nxt = on[i + 1] if i + 1 < len(on) else max(c["end"], p + Fraction(1, 4))
             end = min(max(c["end"], p + Fraction(1, 4)), nxt)
             for m in c["pitches"]:
-                # Timing is the score's; loudness is still his.
+                # Timing is the score's; loudness is still the performance's.
                 ev.append((int((p - start) * tpb), "note_on", m, c["vel"][m]))
                 ev.append((int((end - start) * tpb) - 1, "note_off", m, 0))
     ev.sort(key=lambda e: (e[0], e[1] == "note_on"))
@@ -458,13 +459,15 @@ def main(argv=None):
     ap.add_argument("--alpha", type=float, default=6.0)
     ap.add_argument("--ghost-vel", type=int, default=12)
     ap.add_argument("--title")
+    ap.add_argument("--composer", help="composer name for the score's metadata")
     ap.add_argument("--key", help="spell in this key, e.g. Db or f#; overrides the estimate")
     ap.add_argument("--split", default="55",
                     help="MIDI pitch: notes below go on the bass staff; 'hands' for the viterbi hand model")
     a = ap.parse_args(argv)
     rep, _ = transcribe(a.src, a.out, meter=a.meter, alpha=a.alpha,
                         ghost_vel=a.ghost_vel, title=a.title,
-                        split=None if a.split == "hands" else int(a.split), key=a.key)
+                        split=None if a.split == "hands" else int(a.split), key=a.key,
+                        composer=a.composer)
     pages = engrave(a.out, title=a.title or "")
     print(f"engraved {pages} pages -> {Path(a.out) / 'score.pdf'}")
     print(json.dumps({k: v for k, v in rep.__dict__.items() if not k.endswith("_dropped")}, indent=1))

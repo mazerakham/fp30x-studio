@@ -137,8 +137,8 @@ def cmd_partials(args) -> int:
         print(f"B({note}) = {B:.3e}   rolloff({note}) = {roll:.3f}   "
               f"tau_1 = {tau1:.3f} s")
         if p.hammer_strike_point > 1e-4:
-            # Where the strike-point comb nulls, and where it comes back up.
-            # This is the line that traced the bass clank on 2026-09-05.
+            # Where the strike-point comb nulls, and where it comes back up:
+            # the re-peak above the first null is what makes bass notes clank.
             print(f"strike point {p.hammer_strike_point:g} -> comb nulls at "
                   f"n = {1 / p.hammer_strike_point:.2f}, "
                   f"{2 / p.hammer_strike_point:.2f}, ... (re-peaks between)")

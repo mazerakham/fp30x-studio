@@ -10,7 +10,7 @@ owns the framing and the note-on/note-off pairing; this module reads its
 
 **Silences longer than a threshold cut the take into segments.** A session file
 holds several attempts back to back. A gap of more than a few seconds between
-consecutive onsets is not phrasing, it is Jake stopping.
+consecutive onsets is not phrasing, it is the player stopping.
 
 **Simultaneous notes cluster into one event.** The FP-30X arrives over BLE and
 a chord lands as a ~5 ms arpeggio, so a chord is several rows with distinct

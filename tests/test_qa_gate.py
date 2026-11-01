@@ -1,12 +1,10 @@
 """Tests for :mod:`fp30x_studio.qa`, the gate on a finished render.
 
-Every check in that module exists because something reached the library looking
-finished. These tests exist because the gate itself reached the app without
-being called: it was written, it worked, and `Actions.render` measured loudness
-by hand and never compared it to anything. So what is pinned here is not only
-that the checks fire, but that the two failures which actually shipped on
-2026-09-24 -- a 96 kHz file and a file 2 dB off its loudness target -- are
-caught rather than merely measured.
+Each check guards a failure that can still look like a finished file. What is
+pinned here is not only that the checks fire, but that two such failures, a
+96 kHz file and a file 2 dB off its loudness target, are caught rather than
+merely measured. Measuring loudness without comparing it to the target is the
+failure mode the gate exists to replace.
 
 The fixtures are generated with ffmpeg so the suite needs no audio on disk, and
 skip cleanly where ffmpeg is absent.
@@ -48,7 +46,7 @@ def test_a_good_render_passes_every_check(tmp_path):
 
 
 def test_ninety_six_kilohertz_is_caught(tmp_path):
-    """The 2026-09-24 defect: loudnorm's 192 kHz rate reaching the encoder."""
+    """Loudnorm's 192 kHz internal rate must not reach the encoder."""
     f = _encode(tmp_path / "wrong-rate.m4a", rate=96000)
     rep = qa.check(str(f), expect_seconds=SECONDS, seconds_tol=0.5)
     assert not rep.ok

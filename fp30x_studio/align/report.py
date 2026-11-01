@@ -29,7 +29,7 @@ def l_curve_corner(sweep: list[SweepPoint]) -> int:
     the residual is *signal*, real expressive difference between two
     performances, not measurement error. (The only genuine measurement error is
     the 5 ms transport lattice, and the residual sits two orders above it at
-    every useful :math:`\lambda`.) So the corner is the honest selection rule:
+    every useful :math:`\lambda`.) So the corner is the selection rule:
     the point past which buying residual costs disproportionate tempo variance.
     It is a choice, and the sweep is published beside it so the choice is
     visible rather than silent.
@@ -148,7 +148,7 @@ def align_segments(seg_a: Segment | tuple, seg_b: Segment | tuple, *,
     1. **Correspondence from pitch alone.** No warp exists yet, so nothing about
        timing can have biased it.
     2. **:math:`\lambda` from GCV on that correspondence.** Chosen here, while
-       the residuals are still an honest out-of-sample quantity.
+       the residuals are still an out-of-sample quantity.
     3. **One refinement pass**, in which the first-pass :math:`\varphi` breaks
        the ties pitch could not, followed by a refit *at the :math:`\lambda`
        already chosen*.

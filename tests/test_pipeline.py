@@ -442,7 +442,7 @@ def test_trusted_only_drops_the_repaired_intervals(tmp_path):
 
 TAKES = Path.home() / "Music" / "FP-30X Studio" / "takes"
 
-#: Measured on 2026-08-17 from the real files. Regression fixtures: a change to
+#: Measured from the real files. Regression fixtures: a change to
 #: any of these numbers is a change to what the pipeline believes about the
 #: hardware, and has to be argued for rather than absorbed.
 REAL = {

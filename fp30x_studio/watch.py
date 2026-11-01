@@ -2,7 +2,7 @@
 
 The distinction this module exists for: a live capture *process* and a
 structurally clean *file* both stay green while the piano sits silent, because
-neither of them can see the radio. The only honest liveness signal is "how long
+neither of them can see the radio. The only reliable liveness signal is "how long
 since a message landed", so that is what the light is keyed on.
 
     python -m fp30x_studio.watch              # one status line, exit
@@ -67,7 +67,7 @@ def status(path: Path) -> dict:
     last_ns = msgs[-1]["ns"] if msgs else None
 
     # The capture stamps with mach_absolute_time, not wall clock, so the two
-    # are not comparable. File mtime is the honest cross-clock proxy: the
+    # are not comparable. File mtime is the usable cross-clock proxy: the
     # writer fsyncs every 0.25 s, so it tracks arrivals closely.
     quiet = time.time() - path.stat().st_mtime
 

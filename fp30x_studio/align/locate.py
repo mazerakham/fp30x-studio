@@ -98,7 +98,7 @@ def task(args):
 #
 # Within a segment, consecutive windows of one work extend a stretch while the
 # bars keep moving forward. A backward jump of more than JUMP bars starts a new
-# pass: that is Jake going back to work a passage again.
+# pass: the player has gone back to work a passage again.
 
 
 MARGIN_SURE, MARGIN_LIKELY, RATE_MIN, REPRISE, JUMP, NEAR = 3.0, 1.8, 0.25, 0.9, 4, 12

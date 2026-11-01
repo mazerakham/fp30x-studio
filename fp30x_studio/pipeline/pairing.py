@@ -55,7 +55,7 @@ overlapping notes.
 
 The data can violate the *physical* premise behind it -- that every note-on has
 a matching note-off -- without ever violating the mathematics, provided the
-repair is chosen honestly. On a re-strike this layer closes the open interval
+repair is chosen correctly. On a re-strike this layer closes the open interval
 **at the instant of the new onset**. That is the physically true reading (the
 hammer has reset the string) and it yields two intervals meeting at a point, so
 ``b_i <= a_{i+1}`` holds and the a.e.-disjointness grade is satisfied exactly.
