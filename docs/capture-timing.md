@@ -92,5 +92,4 @@ Measured on two real takes from 2026-08-17 (2,185 and 482 packets): `ts_zero 0` 
 so Apple's BLE-MIDI driver stamps every packet. Removing the 2 ms poll floor exposed the
 link's own: every timestamp is a whole millisecond and a multiple of 5 ms, the minimum
 inter-packet gap is 5 ms, and a chord struck together is delivered as a 5 ms arpeggio. The
-only simultaneity the link admits is the 53 packets carrying two or three messages. The
-full analysis is §5 of [take-2026-08-17.html](take-2026-08-17.html).
+only simultaneity the link admits is the 53 packets carrying two or three messages.

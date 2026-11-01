@@ -69,8 +69,7 @@ restart at zero, the alignment still ends where continuing stops paying, and
 Charging a cut for the mass it destroys
 ---------------------------------------
 ``gap`` prices a cut by *how many events* it skips, which makes snipping either
-end of a rest cost the same as cutting through a held chord. Jake's objection
-to that is right, and it has a clean fix that needs no silence threshold:
+end of a rest cost the same as cutting through a held chord. The fix needs no silence threshold:
 charge a cut for what it removes,
 
 .. math::  c\\bigl(\\text{cut over }[s,t]\\bigr) = \\int_s^t \\lVert f(u)\\rVert\\,du ,

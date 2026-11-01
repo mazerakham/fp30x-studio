@@ -14,3 +14,9 @@ docs/takes.json
 docs/.label-cache/
 .index/
 docs/research/
+
+# Analyses written to the author, not documentation; kept locally only.
+docs/alignment-beyond-homeomorphisms.html
+docs/what-we-capture.html
+docs/warp-op55.html
+docs/take-2026-08-17.html
