@@ -117,6 +117,78 @@ t("bars written after the end at a new tempo are tracked at that tempo", () => {
   assert.deepStrictEqual(bad, []);
 });
 
+
+// 6/8: an original eight-bar phrase in F major, eighth = 12 ticks, bar = 72.
+const SIX8 = [
+  [72, 0, 24], [69, 24, 12], [77, 36, 36],
+  [76, 72, 12], [74, 84, 12], [72, 96, 12], [70, 108, 24], [69, 132, 12],
+  [67, 144, 24], [69, 168, 12], [70, 180, 36],
+  [69, 216, 72],
+  [72, 288, 12], [74, 300, 12], [76, 312, 12], [77, 324, 24], [72, 348, 12],
+  [74, 360, 36], [70, 396, 24], [67, 420, 12],
+  [69, 432, 24], [70, 456, 12], [67, 468, 36],
+  [65, 504, 72],
+  [53, 0, 36], [60, 36, 36], [58, 72, 36], [53, 108, 36], [48, 144, 36], [55, 180, 36], [53, 216, 72],
+  [57, 288, 36], [58, 324, 36], [55, 360, 36], [50, 396, 36], [48, 432, 36], [48, 468, 36], [41, 504, 72],
+];
+function perform(score, eighth, seed) {
+  let s = seed; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const gauss = () => { let u = 0; for (let i = 0; i < 6; i++) u += rnd(); return (u - 3) / Math.sqrt(0.5); };
+  const bt = [0];
+  for (let b = 0; b < 60; b++) { const rit = b >= 36 ? Math.min(1.35, 1 + 0.03 * (b - 35)) : 1; bt.push(bt[b] + eighth * (1 + 0.08 * Math.sin(2 * Math.PI * b / 12)) * rit); }
+  const at = tick => { const b = tick / 12, i = Math.floor(b); return bt[i] + (b - i) * (bt[i + 1] - bt[i]); };
+  const grid = t => Math.round(t / 0.005) * 0.005;
+  const notes = score.map(([p, tk, len], i) => {
+    const acc = tk % 36 === 0 ? (tk % 72 === 0 ? 14 : 7) : 0;
+    const t = grid(1 + at(tk) + 0.012 * gauss()), e = 1 + at(tk + len) - 0.04 - 0.02 * rnd();
+    return { id: "d" + i, t, d: Math.max(0.05, e - t), p, v: Math.round((p < 60 ? 52 : 66) + acc + 6 * gauss()) };
+  }).sort((a, b) => a.t - b.t);
+  const pedal = []; for (let m = 0; m < 8; m++) { pedal.push([1 + at(m * 72) + 0.06, 100]); pedal.push([1 + at((m + 1) * 72) - 0.03, 0]); }
+  return { format: "compose", version: 1, notes, pedal, beats: null, meter: null, key: null, keyOverride: null };
+}
+function exact68(d) {
+  const s = C.notate(d); if (s.meter !== 6 || s.unit !== 8 || s.nBars !== 8) return `${s.meter}/${s.unit}, ${s.nBars} bars`;
+  const got = new Map(); for (const bar of s.bars) for (const st of [0, 1]) for (const e of bar.staves[st]) if (!e.rest) for (const n of e.notes) if (!n.tied) got.set(n.id, e.tick);
+  const bad = d.notes.filter(n => got.get(n.id) !== SIX8[+n.id.slice(1)][1]).length;
+  return bad ? `${bad} onsets off` : "";
+}
+for (const [eighth, label] of [[0.5, "slow, eighth 0.5 s"], [0.34, "dotted quarter 59"], [0.24, "dotted quarter 83"]]) {
+  t(`6/8 found, 8 bars, every onset exact on 30 takes (${label})`, () => {
+    const bad = [];
+    for (let seed = 1; seed <= 30; seed++) { const d = perform(SIX8, eighth, seed); Object.assign(d, C.detect(d)); const r = exact68(d); if (r) bad.push(`seed ${seed}: ${r}`); }
+    console.log(`    ${30 - bad.length}/30 exact`); assert.ok(bad.length <= 3, bad.join("; "));
+  });
+}
+t("a 400-bar 6/8 take with drifting tempo keeps every bar line (no slips over 13 minutes)", () => {
+  let r = 3; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647, g = () => { let u = 0; for (let i = 0; i < 6; i++) u += rnd(); return (u - 3) / Math.sqrt(.5); };
+  const E = 0.34, bt = [0]; for (let b = 0; b < 50 * 48 + 2; b++) bt.push(bt[b] + E * (1 + 0.08 * Math.sin(2 * Math.PI * b / 24) + 0.1 * Math.sin(2 * Math.PI * b / 300)));
+  const at = tk => { const b = tk / 12, i = Math.floor(b); return bt[i] + (b - i) * (bt[i + 1] - bt[i]); }, notes = [];
+  for (let k = 0; k < 50; k++) for (const [p, tk, len] of SIX8) { const T = k * 576 + tk; notes.push({ id: "x" + notes.length, T, t: Math.round((1 + at(T) + 0.012 * g()) / 0.005) * 0.005, d: Math.max(.05, at(T + len) - at(T) - 0.04), p, v: Math.round(58 + (tk % 72 === 0 ? 12 : tk % 36 === 0 ? 6 : 0) + 6 * g()) }); }
+  notes.sort((a, b) => a.t - b.t); const d = { notes, pedal: [], beats: null }; Object.assign(d, C.detect(d)); const s = C.notate(d);
+  const got = new Map(); for (const bar of s.bars) for (const st of [0, 1]) for (const x of bar.staves[st]) if (!x.rest) for (const n of x.notes) if (!n.tied) got.set(n.id, x.tick);
+  const off = notes.filter(n => got.get(n.id) !== n.T).length;
+  console.log(`    ${s.nBars} bars, ${off} of ${notes.length} onsets off`);
+  assert.strictEqual(s.nBars, 400); assert.ok(off <= 10);
+});
+t("6/8 notation: bar 1 is quarter, eighth, dotted quarter; bar 4 a dotted half", () => {
+  const d = perform(SIX8, 0.34, 3); Object.assign(d, C.detect(d)); const s = C.notate(d);
+  assert.deepStrictEqual(s.bars[0].staves[0].map(e => e.base + ".".repeat(e.dots)), ["q", "e", "q."]);
+  assert.deepStrictEqual(s.bars[3].staves[0].map(e => e.base + ".".repeat(e.dots)), ["h."]);
+});
+t("choosing 3/4 by hand regroups the 4/4 demo into bars of three", () => {
+  const d = C.demoDoc(5); Object.assign(d, C.detect(d)); C.setMeter(d, 3, 4); const s = C.notate(d);
+  assert.strictEqual(s.meter, 3); assert.ok(s.nBars >= 10 && s.nBars <= 12, "bars " + s.nBars);
+});
+t("a beat the tracker added is removed, so later bars stay on the downbeat", () => {
+  const d = perform(SIX8, 0.34, 4); Object.assign(d, C.detect(d));
+  const i = d.beats.length >> 1; d.beats.splice(i, 0, (d.beats[i] + d.beats[i - 1]) / 2); // a spurious beat mid-piece
+  C.setMeter(d, 6, 8); assert.strictEqual(exact68(d), "");
+});
+t("MIDI file in 6/8 carries 6/8 and the quarter tempo", () => {
+  const b = C.smf([{ t: 0, d: 1, p: 60, v: 60 }], 120, 6, 8); const i = b.indexOf(0x58);
+  assert.deepStrictEqual([...b.slice(i + 2, i + 5)], [6, 3, 36]);
+});
+
 // Robustness: other seeds of the same phrase.
 let exact = 0;
 for (let seed = 1; seed <= 60; seed++) {

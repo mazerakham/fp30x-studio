@@ -21,7 +21,7 @@ button.on{border-color:var(--acc);color:var(--acc);font-weight:600}
 #wrap{position:relative;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:auto;max-height:72vh}
 canvas{display:block;width:100%}[hidden]{display:none!important}
 #live{height:min(62vh,560px);cursor:crosshair}
-#score{cursor:pointer}
+#score{cursor:pointer;position:sticky;top:0}
 #info{min-height:22px;margin:8px 2px 0;color:var(--mut);font-size:14px}
 #info b{color:var(--fg)}
 #held{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--acc);min-width:110px}
@@ -38,15 +38,15 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   <button id="via" title="Where playback sounds">Sound: laptop</button>
   <div class="grp" id="scoreCtl">
     <select id="key" title="Key"></select>
-    <select id="meter" title="Time signature"><option value="2">2/4</option><option value="3">3/4</option><option value="4">4/4</option></select>
-    <span class="tempo">♩ = <b id="bpm">–</b></span><button id="half" title="Half the tempo: two beats become one">½</button><button id="dbl" title="Double the tempo: each beat splits in two">2×</button>
+    <select id="meter" title="Time signature"><option>2/4</option><option>3/4</option><option>4/4</option><option>3/8</option><option>6/8</option><option>9/8</option><option>12/8</option></select>
+    <span class="tempo"><span id="beatSym">♩</span> = <b id="bpm">–</b></span><button id="half" title="Half the tempo: two beats become one">½</button><button id="dbl" title="Double the tempo: each beat splits in two">2×</button>
     <button id="redetect" title="Find tempo, bars and key again from scratch">Re-detect</button>
   </div>
   <div class="grp"><button id="undo" title="⌘Z">Undo</button><button id="new">New</button><button id="demo">Demo</button></div>
   <div class="grp"><button id="save" title="⌘S">Save</button><button id="open" title="⌘O">Open</button><button id="mid">MIDI file</button></div>
   <span id="midi">MIDI: starting…</span>
 </header>
-<div id="wrap"><canvas id="live"></canvas><canvas id="score" hidden></canvas></div>
+<div id="wrap"><canvas id="live"></canvas><div id="sbox" hidden><canvas id="score"></canvas></div></div>
 <div id="info"></div>
 <div class="keys">
   <kbd>W</kbd> Write on/off: recording starts with the first note you play and lands at the cursor ·
@@ -62,7 +62,9 @@ const K = ComposeCore, TPB = K.TPB;
 const $ = id => document.getElementById(id);
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const colors = () => ({ fg: css("--fg"), mut: css("--mut"), line: css("--line"), staff: css("--staff"), acc: css("--acc"), sel: css("--sel"), rec: css("--rec"), head: css("--head"), card: css("--card") });
-function info(s) { $("info").innerHTML = s; }
+function info(s) { $("info").innerHTML = s; redraw(); }
+const sigOf = s => `${s.meter}/${s.unit || 4}`;
+const tempoOf = s => s.unit === 8 && s.meter % 3 === 0 ? `♩. ≈ <b>${Math.round(s.bpm / 3)}</b>` : `${s.unit === 8 ? "♪" : "♩"} ≈ <b>${Math.round(s.bpm)}</b>`;
 function mmss(t, d = 1) { t = Math.max(0, t); const m = Math.floor(t / 60), s = t - m * 60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(d); }
 
 // ================================================================ document
@@ -325,7 +327,11 @@ function zoom(f) { pps = Math.min(800, Math.max(8, pps * f)); }
 
 // ================================================================ Score view
 // Classical notation drawn from primitives: barred, keyed, valued, beamed.
-const cvS = $("score"), gS = cvS.getContext("2d");
+const cvS = $("score"), gS = cvS.getContext("2d"), sbox = $("sbox"), wrap = $("wrap");
+// Drawing is on demand: a long score costs ~150 ms to draw in full, so only the
+// systems in view are drawn, and only when something changed or is moving.
+var dirty = true; function redraw() { dirty = true; }
+wrap.addEventListener("scroll", redraw, { passive: true });
 const LS = 10, HS = LS / 2, SYS_H = 210, TOP = 18;
 let SW = 0, layout = null, heads = [];
 function layoutScore(s) {
@@ -339,7 +345,7 @@ function layoutScore(s) {
     for (const t of ts) { const o = ticks.get(t); if (o.acc) x += 10; pos.set(t, x); x += (o.len >= bar.len ? 40 : 14 + 24 * Math.sqrt(o.len / TPB)) + (o.dot ? 6 : 0); }
     return { bar, pos, w: Math.max(x + 8, 56) };
   });
-  const prefix = (i) => 46 + Math.abs(s.key.fifths) * 9 + 10 + (i === 0 ? 26 : 0);
+  const prefix = (i) => 46 + Math.abs(s.key.fifths) * 9 + 10 + (i === 0 ? (s.meter > 9 ? 34 : 26) : 0);
   const systems = []; let cur = null;
   for (const b of bars) {
     if (!cur || prefix(systems.length - 1) + cur.w + b.w > SW - 16) { cur = { bars: [], w: 0 }; systems.push(cur); }
@@ -365,22 +371,25 @@ function tickX(b, t) { // t within bar
 }
 function drawScore() {
   const C = colors(), g = gS, s = score();
-  SW = cvS.clientWidth || cvS.parentElement.clientWidth;
+  SW = sbox.clientWidth || wrap.clientWidth;
   heads = [];
   if (!s) {
-    const h = 260, dpr = devicePixelRatio || 1; cvS.style.height = h + "px"; cvS.width = SW * dpr; cvS.height = h * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const h = 260, dpr = devicePixelRatio || 1; sbox.style.height = h + "px"; cvS.style.height = h + "px"; cvS.width = SW * dpr; cvS.height = h * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, SW, h); g.fillStyle = C.mut; g.font = "15px -apple-system,system-ui";
     g.fillText(doc.notes.length ? "Press N to find the key, tempo and bars." : "Nothing written yet. Press W, then play.", 24, 40); return;
   }
   if (!layout || layout.s !== s || layout.SW !== SW) { layout = layoutScore(s); layout.s = s; layout.SW = SW; }
   const { bars, systems } = layout;
-  const H = TOP + systems.length * SYS_H + 10, dpr = devicePixelRatio || 1;
-  if (cvS.height !== Math.round(H * dpr) || cvS.width !== Math.round(SW * dpr)) { cvS.style.height = H + "px"; cvS.width = SW * dpr; cvS.height = H * dpr; }
-  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, SW, H);
+  const H = TOP + systems.length * SYS_H + 10, dpr = devicePixelRatio || 1, VH = Math.min(H, wrap.clientHeight || 600);
+  sbox.style.height = H + "px";
+  if (cvS.height !== Math.round(VH * dpr) || cvS.width !== Math.round(SW * dpr)) { cvS.style.height = VH + "px"; cvS.width = SW * dpr; cvS.height = VH * dpr; }
+  const oy = Math.max(0, Math.min(wrap.scrollTop, H - VH)), seen = sy => sy.y + SYS_H > oy && sy.y < oy + VH;
+  g.setTransform(dpr, 0, 0, dpr, 0, -oy * dpr); g.clearRect(0, oy, SW, VH);
   const cb = cursorBar();
   // selection
-  if (sel) for (let m = sel[0]; m <= sel[1]; m++) { const b = bars[m]; if (!b) continue; const sy = systems[b.sys]; g.fillStyle = C.acc; g.globalAlpha = .1; g.fillRect(b.x, yT(sy, 44), b.w, yB(sy, 12) - yT(sy, 44)); g.globalAlpha = 1; }
+  if (sel) for (let m = sel[0]; m <= sel[1]; m++) { const b = bars[m]; if (!b) continue; const sy = systems[b.sys]; if (!seen(sy)) continue; g.fillStyle = C.acc; g.globalAlpha = .1; g.fillRect(b.x, yT(sy, 44), b.w, yB(sy, 12) - yT(sy, 44)); g.globalAlpha = 1; }
   for (const [i, sy] of systems.entries()) {
+    if (!seen(sy)) continue;
     g.strokeStyle = C.staff; g.lineWidth = 1;
     for (const y0 of [yT(sy, 38), yB(sy, 26)]) for (let l = 0; l < 5; l++) { const y = Math.round(y0 + l * LS) + .5; g.beginPath(); g.moveTo(sy.x0, y); g.lineTo(sy.x1, y); g.stroke(); }
     // system line and brace
@@ -394,11 +403,11 @@ function drawScore() {
     for (let k = 0; k < Math.abs(f); k++) { const st = f > 0 ? sh[k] : fl[k], x = sy.x0 + 48 + k * 9;
       accidental(g, Math.sign(f), x, yT(sy, st), C.fg); accidental(g, Math.sign(f), x, yB(sy, st - 14), C.fg); }
     if (i === 0) { g.font = `bold ${LS * 2.1}px serif`; const x = sy.x0 + 46 + Math.abs(f) * 9 + 4;
-      for (const yy of [yT(sy, 38), yB(sy, 26)]) { g.fillText(String(s.meter), x, yy + LS * 1.85); g.fillText("4", x, yy + LS * 3.85); } }
+      for (const yy of [yT(sy, 38), yB(sy, 26)]) { g.fillText(String(s.meter), x, yy + LS * 1.85); g.fillText(String(s.unit), x, yy + LS * 3.85); } }
     g.fillStyle = C.mut; g.font = "11px -apple-system,system-ui"; g.fillText(String(sy.bars[0].bar.index + 1), sy.x0 + 2, yT(sy, 38) - 18);
   }
   for (const b of bars) {
-    const sy = systems[b.sys];
+    const sy = systems[b.sys]; if (!seen(sy)) continue;
     g.strokeStyle = C.staff; g.lineWidth = 1; const xb = Math.round(b.x + b.w) + .5;
     if (b !== bars[bars.length - 1]) { g.beginPath(); g.moveTo(xb, yT(sy, 38)); g.lineTo(xb, yB(sy, 18)); g.stroke(); }
     else { g.strokeStyle = C.fg; g.lineWidth = 1; g.beginPath(); g.moveTo(xb - 5, yT(sy, 38)); g.lineTo(xb - 5, yB(sy, 18)); g.stroke(); g.fillStyle = C.fg; g.fillRect(xb - 3, yT(sy, 38), 3.5, yB(sy, 18) - yT(sy, 38)); }
@@ -416,18 +425,20 @@ function drawScore() {
     const m = Math.min(bars.length - 1, Math.floor(tick / s.barLen)), b = bars[m], y = systems[b.sys];
     const x = tickX(b, Math.min(b.bar.len, tick - b.bar.start));
     g.strokeStyle = W.started ? C.rec : C.sel; g.lineWidth = 2; g.beginPath(); g.moveTo(x, yT(y, 42)); g.lineTo(x, yB(y, 14)); g.stroke();
-    const wrap = $("wrap"), top = y.y - 10; if (top < wrap.scrollTop || top + SYS_H > wrap.scrollTop + wrap.clientHeight) wrap.scrollTop = top;
+    const top = y.y - 10; if (top < wrap.scrollTop || top + SYS_H > wrap.scrollTop + wrap.clientHeight) wrap.scrollTop = top;
   }
 }
 function drawStaffBar(g, C, b, sy, st) {
   const Y = st === 0 ? s => yT(sy, s) : s => yB(sy, s), mid = st === 0 ? 34 : 22;
   const evs = b.bar.staves[st], rx = HS * 1.18, ry = HS * .85;
-  // beam groups: two or more eighths or shorter inside one beat
+  // beam groups: two or more eighths or shorter inside one beat, or inside one
+  // dotted quarter (three eighths) in x/8 time
   const groups = []; let gcur = [];
   const flush = () => { if (gcur.length > 1) groups.push(gcur); gcur = []; };
+  const span = b.bar.unit === 8 && b.bar.len % 36 === 0 ? 36 : TPB;
   for (const e of evs) {
-    const beamable = !e.rest && (e.base === "e" || e.base === "s");
-    if (beamable && gcur.length && Math.floor(gcur[0].tick / TPB) === Math.floor(e.tick / TPB) && gcur[0].tri === e.tri) gcur.push(e);
+    const beamable = !e.rest && BEAMS[e.base] > 0;
+    if (beamable && gcur.length && Math.floor(gcur[0].tick / span) === Math.floor(e.tick / span) && gcur[0].tri === e.tri) gcur.push(e);
     else { flush(); if (beamable) gcur.push(e); }
   }
   flush();
@@ -473,8 +484,8 @@ function drawStaffBar(g, C, b, sy, st) {
       const tip = gr ? gr.by : (up ? Y(hi) - 3.5 * LS : Y(lo) + 3.5 * LS);
       g.strokeStyle = C.head; g.lineWidth = 1.2; g.beginPath(); g.moveTo(sx, up ? Y(lo) : Y(hi)); g.lineTo(sx, tip); g.stroke();
       stemTip.set(e, [sx, tip, up]);
-      if (!gr && (e.base === "e" || e.base === "s")) { // flags
-        for (let k = 0; k < (e.base === "s" ? 2 : 1); k++) { const fy = tip + (up ? k * 7 : -k * 7);
+      if (!gr && BEAMS[e.base]) { // flags
+        for (let k = 0; k < BEAMS[e.base]; k++) { const fy = tip + (up ? k * 7 : -k * 7);
           g.beginPath(); g.moveTo(sx, fy); g.bezierCurveTo(sx + 2, fy + (up ? 8 : -8), sx + 11, fy + (up ? 10 : -10), sx + 7, fy + (up ? 22 : -22)); g.lineWidth = 1.8; g.stroke(); }
       }
       if (e.tri && !gr) { g.fillStyle = C.mut; g.font = "italic 11px serif"; g.fillText("3", x - 3, up ? tip - 4 : tip + 12); }
@@ -484,10 +495,13 @@ function drawStaffBar(g, C, b, sy, st) {
   for (const gr of groups) {
     g.fillStyle = C.head; const th = LS * .45, x1 = gr.xs[0], x2 = gr.xs[gr.length - 1];
     g.fillRect(x1, gr.up ? gr.by : gr.by - th, x2 - x1 + 1, th);
-    const y2 = gr.up ? gr.by + th * 1.7 : gr.by - th * 2.7;
-    gr.forEach((e, i) => { if (e.base !== "s") return; const nx = gr[i + 1], pv = gr[i - 1];
-      if (nx && nx.base === "s") g.fillRect(gr.xs[i], y2, gr.xs[i + 1] - gr.xs[i] + 1, th);
-      else if (!(pv && pv.base === "s")) { const L = 8; nx ? g.fillRect(gr.xs[i], y2, L, th) : g.fillRect(gr.xs[i] - L, y2, L, th); } });
+    // second and third beams join neighbours that have them; a lone one is a stub
+    for (const lv of [2, 3]) {
+      const y2 = gr.up ? gr.by + th * 1.7 * (lv - 1) : gr.by - th - th * 1.7 * (lv - 1), has = e => BEAMS[e.base] >= lv;
+      gr.forEach((e, i) => { if (!has(e)) return; const nx = gr[i + 1], pv = gr[i - 1];
+        if (nx && has(nx)) g.fillRect(gr.xs[i], y2, gr.xs[i + 1] - gr.xs[i] + 1, th);
+        else if (!(pv && has(pv))) { const L = 8; nx ? g.fillRect(gr.xs[i], y2, L, th) : g.fillRect(gr.xs[i] - L, y2, L, th); } });
+    }
     if (gr[0].tri) { g.fillStyle = C.mut; g.font = "italic 11px serif"; g.fillText("3", (x1 + x2) / 2 - 3, gr.up ? gr.by - 5 : gr.by + 13); }
   }
 }
@@ -509,13 +523,14 @@ function accidental(g, a, x, y, col) {
   else if (a < 0) { line(x - 2.5, y - 13, x - 2.5, y + 4.5, 1.2); g.lineWidth = 1.7; g.beginPath(); g.moveTo(x - 2.5, y + 4.5); g.bezierCurveTo(x + 5.5, y + 0.5, x + 4.5, y - 6, x - 2.5, y - 1.5); g.stroke(); }
   else { line(x - 2.2, y - 10, x - 2.2, y + 4, 1.1); line(x + 2.2, y - 4, x + 2.2, y + 10, 1.1); line(x - 2.2, y + 3.5, x + 2.2, y + 2, 2.4); line(x - 2.2, y - 2, x + 2.2, y - 3.5, 2.4); }
 }
+const BEAMS = { e: 1, s: 2, t: 3 };
 const onLine = (step, st) => (st === 0 ? (step - 30) : (step - 18)) % 2 === 0;
 function drawRest(g, C, x, Y, mid, e) {
   g.fillStyle = C.head; g.strokeStyle = C.head; g.lineWidth = 1.6;
   if (e.base === "w") g.fillRect(x - 6, Y(mid + 2), 12, HS);
   else if (e.base === "h") g.fillRect(x - 6, Y(mid) - HS, 12, HS);
   else if (e.base === "q") { const y = Y(mid); g.lineWidth = 2.2; g.beginPath(); g.moveTo(x - 2, y - 15); g.lineTo(x + 3, y - 8); g.lineTo(x - 2, y - 2); g.lineTo(x + 3, y + 4); g.quadraticCurveTo(x - 6, y + 2, x + 1, y + 12); g.stroke(); }
-  else { const y = Y(mid), n = e.base === "s" ? 2 : 1;
+  else { const y = Y(mid), n = BEAMS[e.base] || 1;
     for (let k = 0; k < n; k++) { g.beginPath(); g.arc(x - 3 - k * 2, y - 5 + k * 9, 2.4, 0, 7); g.fill(); }
     g.lineWidth = 1.5; g.beginPath(); g.moveTo(x + 3, y - 6); g.lineTo(x - 2 - (n - 1) * 3, y + 10 + (n - 1) * 8); g.stroke(); g.beginPath(); g.moveTo(x - 3, y - 5); g.quadraticCurveTo(x, y - 3, x + 3, y - 6); g.stroke(); }
   for (let d = 0; d < e.dots; d++) { g.beginPath(); g.arc(x + 9 + d * 5, Y(mid + 1), 1.6, 0, 7); g.fill(); }
@@ -539,7 +554,7 @@ function drawTies(g, C, bars, systems) {
 cvS.addEventListener("pointerdown", e => {
   const s = score(); if (!s || !layout || W.started) return;
   if (playing) stop();
-  const r = cvS.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const r = sbox.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; // score coordinates: the box scrolls, the canvas sticks
   // a notehead: say what it is and sound it
   const h = heads.find(h => Math.abs(h.x - x) < 7 && Math.abs(h.y - y) < 6);
   const si = Math.floor((y - TOP) / SYS_H), sy = layout.systems[si];
@@ -552,7 +567,7 @@ cvS.addEventListener("pointerdown", e => {
   cursor = barStartSec(sel[0]);
   if (h && !e.shiftKey) {
     audition(h.n.p, h.n.v);
-    const names = { w: "whole note", h: "half note", q: "quarter note", e: "eighth note", s: "sixteenth note" };
+    const names = { w: "whole note", h: "half note", q: "quarter note", e: "eighth note", s: "sixteenth note", t: "thirty-second note" };
     info(`<b>${h.n.name}</b>, a ${h.e.dots ? "dotted " : ""}${h.e.tri ? "triplet " : ""}${names[h.e.base]}${h.n.tieNext || h.n.tied ? ", tied" : ""}, in bar ${m + 1}. ${clip ? "" : "<kbd>⌘C</kbd> copies this bar."}`);
   } else info(sel[0] === sel[1] ? `Bar ${m + 1}. <kbd>⌘C</kbd> copy · <kbd>⌘V</kbd> paste before it · <kbd>⌫</kbd> delete · <kbd>W</kbd> write from here` : `Bars ${sel[0] + 1}–${sel[1] + 1}. <kbd>⌘C</kbd> copy · <kbd>⌫</kbd> delete`);
 });
@@ -562,7 +577,7 @@ function copySel() { if (!sel || !score()) return; clip = K.copyBars(doc, sel[0]
 function pasteClip() {
   if (!clip) { info("Nothing copied yet. Click a bar in the Score, then <kbd>⌘C</kbd>."); return; }
   if (!score()) { info("Paste works on bars: press <kbd>N</kbd> first."); return; }
-  if (clip.meter !== doc.meter) { info(`Those bars are in ${clip.meter}/4 and this piece is now in ${doc.meter}/4.`); return; }
+  if (clip.meter !== doc.meter || clip.unit !== (doc.unit || 4)) { info(`Those bars are in ${sigOf(clip)} and this piece is now in ${sigOf(doc)}.`); return; }
   const c = cursorBar(); snapshot(); K.pasteBars(doc, clip, c); changed();
   sel = [c, c + clip.bars - 1]; cursor = barStartSec(c + clip.bars);
   info(`Pasted ${clip.bars} bar${clip.bars > 1 ? "s" : ""} as bar${clip.bars > 1 ? "s" : ""} ${c + 1}${clip.bars > 1 ? "–" + (c + clip.bars) : ""}. Everything after moved along.`);
@@ -576,20 +591,22 @@ function deleteSel() {
 function setView(v) {
   if (v === "score" && !doc.beats) {
     if (!doc.notes.length) { info("Nothing to notate yet. Press <kbd>W</kbd> and play."); }
-    else { snapshot(); Object.assign(doc, K.detect(doc)); changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${s.meter}/4</b>, ♩ ≈ <b>${Math.round(s.bpm)}</b>, ${s.nBars} bar${s.nBars > 1 ? "s" : ""}. Any of these can be changed above.`); }
+    else { snapshot(); Object.assign(doc, K.detect(doc)); changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${sigOf(s)}</b>, ${tempoOf(s)}, ${s.nBars} bar${s.nBars > 1 ? "s" : ""}. Any of these can be changed above.`); }
   }
-  view = v; $("live").hidden = v !== "live"; $("score").hidden = v !== "score";
+  view = v; $("live").hidden = v !== "live"; $("sbox").hidden = v !== "score";
   $("vLive").classList.toggle("on", v === "live"); $("vScore").classList.toggle("on", v === "score");
   if (v === "live") resizeLive();
   layout = null; refresh();
 }
 function refresh() {
+  redraw();
   const s = doc.beats ? score() : null;
   $("scoreCtl").style.display = s ? "" : "none";
   if (s) {
     const ks = $("key"); if (!ks.options.length) { ks.innerHTML = `<option value="">auto</option>` + K.KEYS.map(k => `<option>${k.name}</option>`).join(""); }
     ks.options[0].textContent = "Key: auto (" + (K.keyByName(doc.key) || s.key).name + ")"; ks.value = doc.keyOverride || "";
-    $("meter").value = String(doc.meter); $("bpm").textContent = Math.round(s.bpm);
+    $("meter").value = sigOf(s); const dq = s.unit === 8 && s.meter % 3 === 0;
+    $("beatSym").textContent = dq ? "♩." : s.unit === 8 ? "♪" : "♩"; $("bpm").textContent = Math.round(dq ? s.bpm / 3 : s.bpm);
     liveKey = s.key;
   }
   $("undo").disabled = !undoStack.length;
@@ -603,11 +620,15 @@ $("undo").onclick = undo;
 $("via").onclick = () => { if (playing) stop(); soundVia = soundVia === "laptop" && outPort ? "piano" : "laptop"; $("via").textContent = "Sound: " + soundVia; audition(60); info(soundVia === "piano" ? "Playback goes to the piano. You should have just heard middle C from it." : "Playback on the laptop. You should have just heard middle C."); };
 $("new").onclick = () => { if (!doc.notes.length) return; snapshot(); doc = empty(); cursor = 0; vt = 0; sel = null; changed(); setView("live"); info("New piece. <kbd>⌘Z</kbd> brings the last one back."); };
 $("demo").onclick = () => { snapshot(); const d = K.demoDoc(Math.floor(Math.random() * 1000) + 1); delete d.truth; doc = d; cursor = 0; vt = 0; sel = null; changed(); setView("live"); info("A demo take: eight bars played with rubato. Press <kbd>Space</kbd> to hear it, <kbd>N</kbd> to see it as a score."); };
-$("key").onchange = e => { snapshot(); doc.keyOverride = e.target.value || null; changed(); layout = null; };
-$("meter").onchange = e => { snapshot(); doc.meter = +e.target.value; sel = null; changed(); layout = null; };
+// Read the choice before snapshot(): it refreshes the controls from the document.
+$("key").onchange = e => { const v = e.target.value || null; snapshot(); doc.keyOverride = v; changed(); layout = null; };
+$("meter").onchange = e => {
+  const [m, u] = e.target.value.split("/").map(Number); snapshot(); K.setMeter(doc, m, u); sel = null; changed(); layout = null;
+  info(`Bars of ${m}/${u}, downbeats found again. If the bars feel twice too long or short, try ½ or 2×.`);
+};
 $("half").onclick = () => { snapshot(); K.scaleTempo(doc, 0.5); sel = null; changed(); };
 $("dbl").onclick = () => { snapshot(); K.scaleTempo(doc, 2); sel = null; changed(); };
-$("redetect").onclick = () => { snapshot(); doc.beats = null; Object.assign(doc, K.detect(doc)); doc.keyOverride = null; sel = null; changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${s.meter}/4</b>, ♩ ≈ <b>${Math.round(s.bpm)}</b>.`); };
+$("redetect").onclick = () => { snapshot(); doc.beats = null; Object.assign(doc, K.detect(doc)); doc.keyOverride = null; sel = null; changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${sigOf(s)}</b>, ${tempoOf(s)}.`); };
 
 // files
 function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
@@ -620,12 +641,13 @@ $("save").onclick = async () => {
 $("open").onclick = () => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = async () => { try { const d = JSON.parse(await i.files[0].text()); if (d.format !== "compose") throw Error("not a Compose file"); snapshot(); doc = d; cursor = 0; vt = 0; sel = null; changed(); setView(doc.beats ? "score" : "live"); info(`Opened ${i.files[0].name}.`); } catch (e) { info("Could not open: " + e.message); } }; i.click(); };
 $("mid").onclick = () => {
   const s = doc.beats ? score() : null;
-  if (s) download(new Blob([K.smf(K.scoreEvents(s, 0), s.bpm, s.meter)], { type: "audio/midi" }), `compose-${stamp()}-score.mid`);
+  if (s) download(new Blob([K.smf(K.scoreEvents(s, 0), s.bpm, s.meter, s.unit)], { type: "audio/midi" }), `compose-${stamp()}-score.mid`);
   else { const ev = doc.notes.map(n => ({ t: n.t, d: n.d, p: n.p, v: n.v })); ev.pedal = doc.pedal; download(new Blob([K.smf(ev, 120, null)], { type: "audio/midi" }), `compose-${stamp()}-played.mid`); }
   info(s ? "MIDI file of the score: steady tempo, bars and time signature included. Opens in MuseScore." : "MIDI file of what was played, with its own timing.");
 };
 
 addEventListener("keydown", e => {
+  redraw();
   if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
   const m = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
   if (m && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
@@ -650,10 +672,13 @@ let lastNotate = 0;
 function frame(now) {
   const s = $("held");
   if (view === "live") drawLive();
-  else { if (W.started && now - lastNotate > 200) { scoreDirty = true; lastNotate = now; layout = null; } drawScore(); }
+  else {
+    if (W.started && now - lastNotate > 200) { scoreDirty = true; lastNotate = now; layout = null; dirty = true; }
+    if (dirty || playing || W.started) { dirty = false; drawScore(); }
+  }
   requestAnimationFrame(frame);
 }
-addEventListener("resize", () => { resizeLive(); layout = null; });
+addEventListener("resize", () => { resizeLive(); layout = null; redraw(); });
 resizeLive(); refresh(); initMidi(); loadPiano();
 vt = Math.max(0, cursor - 3);
 info(doc.notes.length ? `Your last piece is here: ${doc.notes.length} notes. <kbd>W</kbd> writes more at the cursor; <kbd>New</kbd> starts over.` : "Play: what you play shows up as you play it. <kbd>W</kbd> to write it down.");

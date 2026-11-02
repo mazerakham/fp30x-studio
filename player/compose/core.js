@@ -5,7 +5,8 @@
 //   notes  [{id, t, d, p, v}]   onset and held duration in seconds, MIDI pitch, velocity
 //   pedal  [[t, value]]         sustain (CC64) changes
 //   beats  [sec, ...] | null    set by Notate; null until then
-//   meter  beats per bar (2, 3, 4) once notated
+//   meter  beats per bar once notated (2, 3, 4; or 6, 9, 12 with unit 8)
+//   unit   the note value of one beat: 4 (quarter) or 8 (eighth, for x/8 time)
 //   keyOverride  key name, or null to use the detected one
 // Notation is always *derived* from (notes, beats). Copy, paste and delete of
 // bars edit notes and beats together in seconds, so the live view and the score
@@ -126,6 +127,7 @@ function trackBeats(notes, opt = {}) {
 
   let P;
   if (opt.period) P = opt.period / fr;
+  else if (opt.start) P = opt.start / fr; // a given period that may still bend with the music
   else {
     let bs = -1; P = 60;
     for (let L = 25; L <= 150; L++) {
@@ -148,7 +150,8 @@ function trackBeats(notes, opt = {}) {
     const iv = frames.slice(1).map((f, i) => f - frames[i]);
     const loc = iv.map((_, i) => { const w = iv.slice(Math.max(0, i - 2), i + 3).sort((a, b) => a - b); return w[w.length >> 1]; });
     Pt = new Float64Array(N);
-    for (let t = 0, j = 0; t < N; t++) { while (j < loc.length - 1 && frames[j + 1] <= t) j++; Pt[t] = loc[j]; }
+    // Within a ritardando's reach of the global period, never a different octave of it.
+    for (let t = 0, j = 0; t < N; t++) { while (j < loc.length - 1 && frames[j + 1] <= t) j++; Pt[t] = Math.min(1.45 * P, Math.max(P / 1.45, loc[j])); }
   }
   return { beats: frames.map(f => t0 + f * fr), period: P * fr };
 }
@@ -205,20 +208,33 @@ function beatToSec(b, beats) {
 function quantise(notes, beats, pedal) {
   const spans = pedalSpans(pedal);
   const live = notes.filter(n => !isGhost(n));
+  // Notes struck within 40 ms of each other are one onset, placed at their median: a chord
+  // rolled by a few milliseconds must not straddle a beat line.
+  const at = new Map(), byT = live.slice().sort((a, b) => a.t - b.t);
+  for (let i = 0; i < byT.length;) {
+    let j = i + 1; while (j < byT.length && byT[j].t - byT[j - 1].t <= 0.04 && byT[j].t - byT[i].t < 0.08) j++;
+    const tm = byT[(i + j - 1) >> 1].t; for (let k = i; k < j; k++) at.set(byT[k], tm); i = j;
+  }
   const per = new Map(); // beat index -> [frac]
   const q = live.map(n => {
-    const fb = secToBeat(n.t, beats);
-    let i = Math.floor(fb + EARLY), f = fb - i;
-    const rec = { n, i, f, fe: secToBeat(releaseWithPedal(n.t + n.d, spans), beats), fk: secToBeat(n.t + n.d, beats) };
+    const fb = secToBeat(at.get(n), beats);
+    // Early by a fraction of a beat, or by 40 ms, whichever is more: at a fast
+    // eighth, 6% of a beat is closer than a chord's own spread.
+    const j0 = Math.max(0, Math.min(beats.length - 2, Math.floor(fb))), sec = beats[j0 + 1] - beats[j0];
+    let i = Math.floor(fb + Math.max(EARLY, 0.04 / sec)), f = fb - i;
+    const fk = secToBeat(n.t + n.d, beats), fp = secToBeat(releaseWithPedal(n.t + n.d, spans), beats);
+    const rec = { n, i, f, fe: Number.isFinite(fp) ? fp : fk, fk }; // a pedal never lifted does not hold forever
     if (!per.has(i)) per.set(i, []); per.get(i).push(f);
     return rec;
   });
   const sub = new Map();
   for (const [i, fs] of per) {
     let pick = 0, perr = Infinity;
+    // Tolerance: 9% of a beat or 45 ms, whichever is more, short of the grid's half-step.
+    const k = Math.max(0, Math.min(beats.length - 2, i)), sec = beats[k + 1] - beats[k];
     for (const s of [1, 2, 3, 4]) {
       let e = 0; for (const f of fs) e = Math.max(e, Math.abs(f - Math.round(f * s) / s));
-      if (e <= 0.09) { pick = s; break; }
+      if (e <= Math.min(0.4 / s, Math.max(0.09, 0.045 / sec))) { pick = s; break; }
       if (s >= 3 && e < perr) { perr = e; pick = s; }
     }
     sub.set(i, pick);
@@ -230,47 +246,164 @@ function quantise(notes, beats, pedal) {
     r.on = r.i * TPB + Math.round(r.f * s) * TPB / s;
     r.off = snap(r.fe); r.offKey = snap(r.fk);
   }
-  return { q, subAt };
+  return { q, subAt, sub };
 }
 
 // ------------------------------------------------------------------ meter
-function detectMeter(q) {
-  const w = new Map(); let nb = 0;
+// Accent per beat: what starts on the beat line, weighted by length, bass and loudness.
+function beatWeights(q, n, cap = 2) {
+  const w = new Float64Array(n);
   for (const r of q) {
     if (r.on % TPB) continue;
-    const b = r.on / TPB; nb = Math.max(nb, b + 1);
-    const dur = Math.min(2, Math.max(0.25, (r.offKey - r.on) / TPB));
-    w.set(b, (w.get(b) || 0) + (dur + (r.n.p < 55 ? 1 : 0)) * (0.5 + r.n.v / 127));
+    const b = r.on / TPB; if (b < 0 || b >= n) continue;
+    const dur = Math.min(cap, Math.max(0.25, (r.offKey - r.on) / TPB));
+    w[b] += (dur + (r.n.p < 55 ? 1 : 0)) * (0.5 + r.n.v / 127);
   }
-  let tot = 0; for (const x of w.values()) tot += x;
-  if (nb < 4 || !tot) return { meter: 4, phase: 0 };
-  const mean = tot / nb;
-  let best = { meter: 4, phase: 0 }, bs = -1;
-  for (const [k, prior] of [[4, 1.06], [3, 1.0], [2, 0.92]]) for (let ph = 0; ph < k; ph++) {
-    let s = 0, c = 0; for (let b = ph; b < nb; b += k) { s += w.get(b) || 0; c++; }
-    const sc = (s / c / mean) * prior * (ph === 0 ? 1.04 : 1);
-    if (sc > bs) { bs = sc; best = { meter: k, phase: ph }; }
+  return w;
+}
+// Beats per bar, by vote over windows of 48 beats, each window free to find its
+// own downbeat: over a long take one slipped beat would blur a single global fit.
+const METERS = [[4, 1.06], [3, 1.0], [2, 0.92], [6, 1.0]];
+function chooseMeter(w, cands = METERS) {
+  const n = w.length, W = Math.min(48, n), votes = new Map();
+  if (n < 4) return cands[0][0];
+  for (let s = 0; s + W <= n; s += Math.max(1, W >> 1)) {
+    let mean = 0; for (let i = s; i < s + W; i++) mean += w[i]; mean /= W; if (!mean) continue;
+    let best = null, bs = -1;
+    for (const [k, pr] of cands) for (let ph = 0; ph < k; ph++) {
+      let t = 0, c = 0; for (let i = s + ph; i < s + W; i += k) { t += w[i]; c++; }
+      const sc = t / c / mean * pr; if (sc > bs) { bs = sc; best = k; }
+    }
+    votes.set(best, (votes.get(best) || 0) + 1);
   }
+  let best = cands[0][0], bv = -1;
+  for (const [k] of cands) if ((votes.get(k) || 0) > bv) { bv = votes.get(k) || 0; best = k; }
   return best;
+}
+// Downbeats: a dynamic programme over each beat's place in the bar, rewarded by
+// accent on strong places and charged for any break in the count. A break is
+// a beat the tracker added or lost; it is repaired in the beat map (a beat
+// removed, or a long interval split), so every bar keeps its length.
+const TEMPLATE = { 2: [1, 0], 3: [1, 0, 0], 4: [1, 0, .5, 0], 6: [1, 0, 0, .5, 0, 0],
+  9: [1, 0, 0, .5, 0, 0, .5, 0, 0], 12: [1, 0, 0, .5, 0, 0, .7, 0, 0, .5, 0, 0] };
+const JUMP = 4;
+function alignBars(beats, w, k, onsets = []) {
+  const n = Math.min(beats.length, w.length), T = TEMPLATE[k] || [1, ...Array(k - 1).fill(0)];
+  let mean = 0; for (let i = 0; i < n; i++) mean += w[i]; mean = mean / Math.max(1, n) || 1;
+  if (n < 2) return { beats: beats.slice(), phase: 0, edits: 0 };
+  const S = [], back = [];
+  S[0] = T.map((t, p) => t * w[0] / mean + (p === 0 ? 0.5 : 0)); back[0] = T.map(() => -1); // most pieces start on a downbeat
+  for (let i = 1; i < n; i++) {
+    const prev = S[i - 1]; let am = 0; for (let p = 1; p < k; p++) if (prev[p] > prev[am]) am = p;
+    S[i] = []; back[i] = [];
+    for (let p = 0; p < k; p++) {
+      const pp = (p - 1 + k) % k, stay = prev[pp], jump = prev[am] - JUMP;
+      const [v, from] = stay >= jump ? [stay, pp] : [jump, am];
+      S[i][p] = v + T[p] * w[i] / mean; back[i][p] = from;
+    }
+  }
+  const pos = new Array(n); let p = 0; for (let q = 1; q < k; q++) if (S[n - 1][q] > S[n - 1][p]) p = q;
+  for (let i = n - 1; i >= 0; i--) { pos[i] = p; p = back[i][p]; }
+  const B = beats.slice(), Wt = Array.from(w).slice(0, B.length); let edits = 0;
+  while (Wt.length < B.length) Wt.push(0);
+  for (let i = n - 1; i >= 1; i--) {
+    const d = (pos[i] - pos[i - 1] - 1 + k) % k; if (!d) continue;
+    // The repair goes where it leaves the nearby onsets closest to the beat
+    // grid (halves of a beat), so a beat squeezed into a ritardando is the one removed.
+    const lo = Math.max(1, i - 2 * k), win = [B[Math.max(0, lo - 1)], B[Math.min(B.length - 1, i + 2 * k)]];
+    const near = onsets.filter(t => t >= win[0] && t < win[1]);
+    const err = BB => { let e = 0; for (const t of near) { const f = secToBeat(t, BB) * 2; e += (f - Math.round(f)) ** 2; } return e; };
+    // ...and inside the silent run of beats the break falls in: any beat in it
+    // can go, but a beat with an onset on it was already counted by its side.
+    let from = i, to = i;
+    while (from > 1 && from > i - 2 * k && !(Wt[from - 1] > 0)) from--;
+    while (to < B.length - 1 && to < i + 2 * k && !(Wt[to] > 0)) to++;
+    if (from >= to) { from = Math.max(1, i - 2 * k); to = i; }
+    for (let c = 0; c < (d <= k / 2 ? d : k - d); c++) {
+      let best = null, be = Infinity;
+      if (d <= k / 2) for (let j = from; j <= to; j++) {
+        const BB = B.slice(); BB.splice(j, 0, (B[j] + B[j - 1]) / 2); const e = err(BB); if (e < be) { be = e; best = [j, BB]; }
+      } else for (let j = from; j < to; j++) {
+        const BB = B.slice(); BB.splice(j, 1); const e = err(BB) + 2 * Wt[j] / mean; if (e < be) { be = e; best = [j, BB]; }
+      }
+      if (!best) break;
+      const [j, BB] = best; B.length = 0; B.push(...BB);
+      if (d <= k / 2) { Wt.splice(j, 0, 0); to++; } else { Wt.splice(j, 1); to--; }
+    }
+    edits++;
+  }
+  return { beats: B, phase: (k - pos[0]) % k, edits };
+}
+// Divide each beat into f. With onsets given, every line moves onto the
+// onsets played near it, so the grid follows the timing inside the beat.
+function splitBeats(b, f, onsets) {
+  const out = [];
+  for (let i = 0; i < b.length - 1; i++) for (let j = 0; j < f; j++) {
+    let t = b[i] + (b[i + 1] - b[i]) * j / f;
+    if (onsets) {
+      const r = 0.3 * (b[i + 1] - b[i]) / f, near = onsets.filter(o => Math.abs(o - t) < r);
+      if (near.length) t = out.length ? near[near.length >> 1] : near[0]; // nothing may fall before the first line
+    }
+    const nominal = b[i] + (b[i + 1] - b[i]) * j / f, step = (b[i + 1] - b[i]) / f;
+    if (out.length && t <= out[out.length - 1] + 0.5 * step) t = Math.max(nominal, out[out.length - 1] + 0.5 * step);
+    out.push(t);
+  }
+  out.push(b[b.length - 1]); return out;
+}
+const unitOf = meter => meter % 3 === 0 && meter > 3 ? 8 : 4;
+// Put bar lines on beats: downbeats from the accents, then beats prepended so a
+// pickup sits in a first bar that starts with rests.
+function barLines(notes, beats, pedal, meter) {
+  const end = Math.max(...notes.map(n => n.t + n.d));
+  let b = extendBeats(beats, end + 0.01);
+  const { q } = quantise(notes, b, pedal);
+  const on = notes.map(n => n.t).sort((x, y) => x - y);
+  const al = alignBars(b, beatWeights(q, b.length, meter), meter, on); // a note held a whole bar marks its start
+  b = al.beats;
+  if (al.phase) {
+    const iv = b[1] - b[0], pre = [];
+    for (let i = meter - al.phase; i >= 1; i--) pre.push(b[0] - i * iv);
+    b = pre.concat(b);
+  }
+  return b;
+}
+// Kept for callers that want the old answer shape.
+function detectMeter(q) {
+  let n = 0; for (const r of q) if (r.on % TPB === 0) n = Math.max(n, r.on / TPB + 1);
+  return { meter: chooseMeter(beatWeights(q, n)), phase: 0 };
 }
 
 // ------------------------------------------------------------------ notate
-// First Notate: find beats, meter, key; prepend beats so a pickup sits in a
-// first bar that starts with rests. Returns the fields to merge into the doc.
+// First Notate: find beats, meter, key. Returns the fields to merge into the doc.
 function detect(doc) {
   const notes = doc.notes.filter(n => !isGhost(n));
   if (!notes.length) return null;
   const { beats } = trackBeats(notes);
   const end = Math.max(...notes.map(n => n.t + n.d));
-  let b = extendBeats(beats, end + 0.01);
-  const { q } = quantise(notes, b, doc.pedal);
-  const { meter, phase } = detectMeter(q);
-  if (phase) {
-    const iv = b[1] - b[0], pre = [];
-    for (let i = meter - phase; i >= 1; i--) pre.push(b[0] - i * iv);
-    b = pre.concat(b);
+  let b = extendBeats(beats, end + 0.01), cands = METERS;
+  let { q, sub } = quantise(notes, b, doc.pedal);
+  // Beats that mostly divide in three are dotted quarters: count eighths instead.
+  let n3 = 0, n24 = 0; for (const s of sub.values()) { if (s === 3) n3++; else if (s === 2 || s === 4) n24++; }
+  const on = notes.map(n => n.t).sort((x, y) => x - y);
+  if (n3 >= 8 && n3 >= 1.5 * n24) { b = splitBeats(b, 3, on); q = quantise(notes, b, doc.pedal).q; cands = [[6, 1], [9, .9]]; }
+  const meter = chooseMeter(beatWeights(q, b.length), cands);
+  // Compound time counted in eighths: track the dotted quarter, which a long
+  // held note cannot hide, and count three eighths in each.
+  if (unitOf(meter) === 8 && cands === METERS) {
+    const P = (b[b.length - 1] - b[0]) / (b.length - 1);
+    b = extendBeats(splitBeats(trackBeats(notes, { start: 3 * P }).beats, 3, on), end + 0.01);
   }
-  return { beats: b, meter, key: detectKey(notes).name };
+  return { beats: barLines(notes, b, doc.pedal, meter), meter, unit: unitOf(meter), key: detectKey(notes).name };
+}
+// A time signature chosen by hand: the beats stay, the downbeats are found again.
+function setMeter(doc, meter, unit) {
+  const notes = doc.notes.filter(n => !isGhost(n));
+  doc.meter = meter; doc.unit = unit;
+  if (!notes.length || !doc.beats) return;
+  const first = Math.min(...notes.map(n => n.t));
+  let b = doc.beats.slice();
+  while (b.length > 2 && b[1] - first <= EARLY * (b[1] - b[0])) b.shift(); // drop the pickup padding
+  doc.beats = barLines(notes, b, doc.pedal, meter);
 }
 
 // Re-fit only what lies past the last beat (after Write added notes there),
@@ -291,24 +424,30 @@ function currentKey(doc) {
 }
 
 const VALUES = { 48: ["w", 0], 36: ["h", 1], 24: ["h", 0], 18: ["q", 1], 12: ["q", 0], 9: ["e", 1], 6: ["e", 0], 3: ["s", 0], 8: ["q", 0, 1], 4: ["e", 0, 1] };
+// With the eighth as the beat ("t" is a thirty-second).
+const VALUES8 = { 72: ["h", 1], 48: ["h", 0], 36: ["q", 1], 24: ["q", 0], 18: ["e", 1], 12: ["e", 0], 9: ["s", 1], 6: ["s", 0], 3: ["t", 0], 8: ["e", 0, 1], 4: ["s", 0, 1] };
 
 // Split [a, b) into notatable pieces: whole beats from a beat line, otherwise
 // pieces inside one beat on that beat's own grid. Never crosses a barline.
-function pieces(a, b, barStart, barLen, subAt) {
+// In x/8 time the beat groups are dotted quarters (36 ticks): a whole-beat
+// piece never crosses one unless it starts on it.
+function pieces(a, b, barStart, barLen, subAt, unit = 4) {
+  const V = unit === 8 ? VALUES8 : VALUES, grouped = unit === 8 && barLen % 36 === 0;
   const out = [], barEnd = barStart + barLen;
   while (a < b) {
     const bi = Math.floor(a / TPB), bs = bi * TPB, inBeat = a - bs;
     let v;
     if (inBeat === 0 && b - a >= TPB) {
-      const room = Math.min(b, barEnd) - a;
-      v = [48, 36, 24, 18, 12].find(x => x <= room && (x !== 36 || (a - barStart) % 24 === 0 || barLen === 36)) || 12;
+      const room = Math.min(b, barEnd) - a, pos = a - barStart, g = pos % 36;
+      if (grouped) v = [72, 36, 24, 12].find(x => x <= room && (x === 72 ? pos % 72 === 0 : x === 36 ? g === 0 : x === 24 ? g + 24 <= 36 : true)) || 12;
+      else v = [48, 36, 24, 18, 12].find(x => x <= room && (x !== 36 || (a - barStart) % 24 === 0 || barLen === 36)) || 12;
     } else {
       const len = Math.min(b, bs + TPB) - a;
       if (subAt(bi) === 3) v = len >= 8 && inBeat % 4 === 0 ? 8 : 4;
       else v = len >= 9 && inBeat === 0 ? 9 : len >= 6 && inBeat % 6 === 0 ? 6 : 3;
       v = Math.min(v, len);
     }
-    const [base, dots, tri] = VALUES[v] || ["s", 0, 0];
+    const [base, dots, tri] = V[v] || [unit === 8 ? "t" : "s", 0, 0];
     out.push({ tick: a, len: v, base, dots, tri: !!tri });
     a += v;
   }
@@ -321,7 +460,7 @@ function pieces(a, b, barStart, barLen, subAt) {
 // riddled with short rests and the pedal does not smear across chords.
 function notate(doc) {
   if (!doc.beats) return null;
-  const key = currentKey(doc), meter = doc.meter || 4, barLen = meter * TPB;
+  const key = currentKey(doc), meter = doc.meter || 4, unit = doc.unit || 4, barLen = meter * TPB;
   const notes = doc.notes.filter(n => !isGhost(n));
   const end = notes.length ? Math.max(...notes.map(n => n.t + n.d)) : doc.beats[0];
   const beats = extendBeats(doc.beats, end + 0.01);
@@ -343,7 +482,8 @@ function notate(doc) {
       const unit = TPB / subAt(Math.floor(c.on / TPB));
       let e = rel >= next - TPB / 2 ? next : rel;
       // The piece's last chord, let go within half a beat of a barline, is held to it.
-      if (next === Infinity) { const bl = Math.ceil(rel / barLen) * barLen; e = bl - rel <= TPB / 2 ? bl : rel; }
+      // Held on past one (a fermata, a final ring) by under a third of a bar, it stops at that one.
+      if (next === Infinity) { const bl = Math.ceil(rel / barLen) * barLen, bp = bl - barLen; e = bl - rel <= TPB / 2 ? bl : bp > c.on && rel - bp <= barLen / 3 ? bp : rel; }
       c.end = Math.min(next, Math.max(e, c.on + unit));
       lastTick = Math.max(lastTick, c.end);
     });
@@ -351,7 +491,7 @@ function notate(doc) {
   }
   const nBars = Math.max(1, Math.ceil(lastTick / barLen));
   const bars = [];
-  for (let m = 0; m < nBars; m++) bars.push({ index: m, start: m * barLen, len: barLen, staves: [[], []] });
+  for (let m = 0; m < nBars; m++) bars.push({ index: m, start: m * barLen, len: barLen, unit, staves: [[], []] });
   for (const s of [0, 1]) {
     const chords = staves[s];
     let cursor = 0;
@@ -359,7 +499,7 @@ function notate(doc) {
       while (a < b) {
         const m = Math.floor(a / barLen); if (m >= nBars) return;
         const segEnd = Math.min(b, (m + 1) * barLen);
-        const ps = pieces(a, segEnd, m * barLen, barLen, subAt);
+        const ps = pieces(a, segEnd, m * barLen, barLen, subAt, unit);
         ps.forEach((pc, j) => {
           pc.rest = !chord;
           if (chord) {
@@ -396,7 +536,7 @@ function notate(doc) {
   const ivs = []; for (let i = 1; i < beats.length; i++) ivs.push(beats[i] - beats[i - 1]);
   ivs.sort((a, b) => a - b);
   const bpm = 60 / ivs[ivs.length >> 1];
-  return { key, meter, bpm, bars, beats, barLen, subAt, nBars };
+  return { key, meter, unit, bpm, bars, beats, barLen, subAt, nBars };
 }
 
 // ------------------------------------------------------------------ bar edits
@@ -417,7 +557,7 @@ function copyBars(doc, m1, m2) {
   ensureBars(doc, m2 + 1);
   const k = doc.meter, A = doc.beats[m1 * k], B = doc.beats[(m2 + 1) * k];
   return {
-    bars: m2 - m1 + 1, meter: k, len: B - A,
+    bars: m2 - m1 + 1, meter: k, unit: doc.unit || 4, len: B - A,
     beats: doc.beats.slice(m1 * k, (m2 + 1) * k).map(t => t - A),
     notes: (tk => doc.notes.filter(n => tk(n) >= m1 * k * TPB && tk(n) < (m2 + 1) * k * TPB))(onsetTicks(doc)).map(n => ({ ...n, t: n.t - A })),
     pedal: (doc.pedal || []).filter(([t]) => t >= A && t < B).map(([t, v]) => [t - A, v]),
@@ -472,17 +612,17 @@ function scoreEvents(sc, fromBar) {
 }
 
 // ------------------------------------------------------------------ MIDI file
-function smf(events, bpm, meter) {
-  const PPQ = 480, tps = PPQ * bpm / 60;
+function smf(events, bpm, meter, unit = 4) {
+  const qbpm = unit === 8 ? bpm / 2 : bpm, PPQ = 480, tps = PPQ * qbpm / 60;
   const ev = [];
   for (const e of events) { ev.push([Math.round(e.t * tps), 0x90, e.p, Math.max(1, e.v)]); ev.push([Math.round((e.t + e.d) * tps), 0x80, e.p, 0]); }
   for (const [t, v] of events.pedal || []) ev.push([Math.round(t * tps), 0xB0, 64, v]);
   ev.sort((a, b) => a[0] - b[0] || (a[1] === 0x80 ? -1 : 1));
   const bytes = [];
   const vlq = n => { const s = [n & 0x7f]; while ((n >>= 7)) s.unshift((n & 0x7f) | 0x80); return s; };
-  const us = Math.round(60e6 / bpm);
+  const us = Math.round(60e6 / qbpm);
   bytes.push(0, 0xFF, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255);
-  if (meter) bytes.push(0, 0xFF, 0x58, 4, meter, 2, 24, 8);
+  if (meter) bytes.push(0, 0xFF, 0x58, 4, meter, unit === 8 ? 3 : 2, unit === 8 && meter % 3 === 0 ? 36 : 24, 8);
   let last = 0;
   for (const [t, st, a, b] of ev) { bytes.push(...vlq(t - last), st, a, b); last = t; }
   bytes.push(0, 0xFF, 0x2F, 0);
@@ -531,7 +671,7 @@ function demoDoc(seed = 7) {
 }
 
 const api = { TPB, KEYS, keyByName, detectKey, spell, spellPc, pedalSpans, releaseWithPedal, isGhost,
-  trackBeats, extendBeats, secToBeat, beatToSec, quantise, detectMeter, detect, extendTracking, currentKey,
+  trackBeats, extendBeats, secToBeat, beatToSec, quantise, detectMeter, detect, setMeter, chooseMeter, alignBars, beatWeights, splitBeats, unitOf, extendTracking, currentKey,
   notate, pieces, copyBars, pasteBars, deleteBars, ensureBars, scaleTempo, scoreEvents, smf, demoDoc, newId };
 G.ComposeCore = api;
 if (typeof module !== "undefined" && module.exports) module.exports = api;

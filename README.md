@@ -30,7 +30,7 @@ Pairing the piano is less obvious than it looks: [docs/connecting-the-piano.md](
 | Sample-free synthesis; the `acoustic` preset is fitted to recorded Steinway notes | `synth/` | module docstring |
 | Notation drawn from primitives, with no notation font or library | `viz/` | module docstring |
 | Take-per-bar comping, stumble detection, pedal-aware excerpts, hand separation, transcription | `comp.py`, `stumbles.py`, `slicekit.py`, `hands.py`, `transcribe.py` | [HANDS-findings.md](docs/HANDS-findings.md) |
-| A composing score: play and it draws; Write records at a cursor; Notate finds key, tempo and bars and engraves; bars copy and paste | `player/compose/` | `node player/compose/test.cjs` |
+| A composing score: play and it draws; Write records at a cursor; Notate finds key, tempo and bars (simple or compound time, 6/8 included) and engraves; bars copy and paste | `player/compose/` | `node player/compose/test.cjs` |
 | An on-disk bundle format and its validator | `fpx/` | [SPEC-fpx-format.md](docs/SPEC-fpx-format.md) |
 
 ## Data not included
