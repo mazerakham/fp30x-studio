@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Compose</title>
+<style>
+:root{--bg:#faf8f4;--fg:#1d1b18;--mut:#6b655c;--card:#fff;--line:#d9d3c8;--staff:#8a8378;--acc:#2f5d8a;--sel:#c2410c;--rec:#c0392b;--head:#1d1b18}
+@media (prefers-color-scheme:dark){:root{--bg:#171614;--fg:#ece8e1;--mut:#a29b90;--card:#211f1c;--line:#3a3631;--staff:#6f685e;--acc:#86b2dd;--sel:#f08a4b;--rec:#ef6a5b;--head:#ece8e1}}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 -apple-system,system-ui,sans-serif;margin:0;padding:14px 16px 24px}
+header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+h1{font-size:18px;margin:0 10px 0 0;font-weight:650}
+button,select{font:inherit;font-size:14px;padding:5px 11px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button:hover:not(:disabled){border-color:var(--acc)}button:disabled{opacity:.45;cursor:default}
+button.on{border-color:var(--acc);color:var(--acc);font-weight:600}
+#write.on{border-color:var(--rec);color:var(--rec)}
+#write .dot{display:inline-block;width:9px;height:9px;border-radius:50%;border:1.5px solid currentColor;margin-right:6px;vertical-align:0}
+#write.on .dot{background:currentColor}#write.rolling .dot{animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.grp{display:flex;gap:6px;align-items:center;padding-left:9px;border-left:1px solid var(--line)}
+.seg button{border-radius:0}.seg button:first-child{border-radius:6px 0 0 6px}.seg button:last-child{border-radius:0 6px 6px 0;margin-left:-1px}
+#midi{font-size:13px;color:var(--mut);margin-left:auto}#midi b{color:var(--fg);font-weight:600}
+#wrap{position:relative;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:auto;max-height:72vh}
+canvas{display:block;width:100%}[hidden]{display:none!important}
+#live{height:min(62vh,560px);cursor:crosshair}
+#score{cursor:pointer}
+#info{min-height:22px;margin:8px 2px 0;color:var(--mut);font-size:14px}
+#info b{color:var(--fg)}
+#held{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--acc);min-width:110px}
+.keys{color:var(--mut);font-size:13px;margin-top:12px;line-height:1.9}
+kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--card)}
+.tempo{font-size:14px;color:var(--mut)}.tempo b{color:var(--fg)}
+</style></head><body>
+<header>
+  <h1>Compose</h1>
+  <button id="write" title="W"><span class="dot"></span>Write</button>
+  <div class="seg"><button id="vLive" class="on" title="N toggles">Live</button><button id="vScore" title="N toggles">Score</button></div>
+  <button id="play" title="Space">Play</button>
+  <button id="met" title="M">Click</button>
+  <div class="grp" id="scoreCtl">
+    <select id="key" title="Key"></select>
+    <select id="meter" title="Time signature"><option value="2">2/4</option><option value="3">3/4</option><option value="4">4/4</option></select>
+    <span class="tempo">♩ = <b id="bpm">–</b></span><button id="half" title="Half the tempo: two beats become one">½</button><button id="dbl" title="Double the tempo: each beat splits in two">2×</button>
+    <button id="redetect" title="Find tempo, bars and key again from scratch">Re-detect</button>
+  </div>
+  <div class="grp"><button id="undo" title="⌘Z">Undo</button><button id="new">New</button><button id="demo">Demo</button></div>
+  <div class="grp"><button id="save" title="⌘S">Save</button><button id="open" title="⌘O">Open</button><button id="mid">MIDI file</button></div>
+  <span id="midi">MIDI: starting…</span>
+</header>
+<div id="wrap"><canvas id="live"></canvas><canvas id="score" hidden></canvas></div>
+<div id="info"></div>
+<div class="keys">
+  <kbd>W</kbd> Write on/off: recording starts with the first note you play and lands at the cursor ·
+  <kbd>N</kbd> Live ↔ Score (the first time, it finds key, tempo and bars) ·
+  <kbd>Space</kbd> play from the cursor · <kbd>M</kbd> click track while writing ·
+  click to place the cursor · in Score: click a bar, <kbd>⇧</kbd>-click to extend, <kbd>⌘C</kbd> copy, <kbd>⌘V</kbd> paste before the cursor bar, <kbd>⌫</kbd> delete bars ·
+  <kbd>⌘Z</kbd> undo · <kbd>⇧⌘Z</kbd> redo · <kbd>Home</kbd><kbd>End</kbd> cursor to start or end · <kbd>+</kbd><kbd>−</kbd> zoom Live
+</div>
+<script src="core.js"></script>
+<script>
+"use strict";
+const K = ComposeCore, TPB = K.TPB;
+const $ = id => document.getElementById(id);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const colors = () => ({ fg: css("--fg"), mut: css("--mut"), line: css("--line"), staff: css("--staff"), acc: css("--acc"), sel: css("--sel"), rec: css("--rec"), head: css("--head"), card: css("--card") });
+function info(s) { $("info").innerHTML = s; }
+function mmss(t, d = 1) { t = Math.max(0, t); const m = Math.floor(t / 60), s = t - m * 60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(d); }
+
+// ================================================================ document
+const STORE = "compose:doc";
+const empty = () => ({ format: "compose", version: 1, notes: [], pedal: [], beats: null, meter: null, key: null, keyOverride: null });
+let doc = empty();
+try { const s = localStorage.getItem(STORE); if (s) doc = JSON.parse(s); } catch (e) {}
+let undoStack = [], redoStack = [], cursor = 0, view = "live", sc = null, scoreDirty = true, sel = null, clip = null;
+function snapshot() { undoStack.push(JSON.stringify(doc)); if (undoStack.length > 200) undoStack.shift(); redoStack = []; refresh(); }
+function changed() { scoreDirty = true; try { localStorage.setItem(STORE, JSON.stringify(doc)); } catch (e) {} refresh(); }
+function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(doc)); doc = JSON.parse(undoStack.pop()); clampCursor(); changed(); info("Undone."); }
+function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify(doc)); doc = JSON.parse(redoStack.pop()); clampCursor(); changed(); info("Redone."); }
+const docEnd = () => doc.notes.reduce((e, n) => Math.max(e, n.t + n.d), 0);
+function clampCursor() { cursor = Math.min(Math.max(0, cursor), docEnd()); }
+cursor = docEnd();
+
+function score() { if (scoreDirty && doc.beats) { sc = K.notate(doc); scoreDirty = false; } if (!doc.beats) sc = null; return sc; }
+// The bar the cursor stands at the start of (bars count from 0).
+function cursorBar() { const s = score(); if (!s) return 0; return Math.max(0, Math.min(s.nBars, Math.round(K.secToBeat(cursor, s.beats) / s.meter))); }
+function barStartSec(m) { K.ensureBars(doc, m); return doc.beats[m * doc.meter]; }
+
+// ================================================================ MIDI in and out
+let midiAccess = null, outPort = null, soundVia = "laptop";
+const held = new Map(); // pitch -> {ms, v}
+async function initMidi() {
+  if (!navigator.requestMIDIAccess) { $("midi").textContent = "This browser has no Web MIDI. Use Chrome."; return; }
+  try { midiAccess = await navigator.requestMIDIAccess(); }
+  catch (e) { $("midi").innerHTML = "MIDI blocked: allow it in the address bar, then reload."; return; }
+  midiAccess.onstatechange = bindMidi; bindMidi();
+}
+function bindMidi() {
+  const ins = [...midiAccess.inputs.values()].filter(i => i.state === "connected");
+  for (const i of ins) i.onmidimessage = e => onMidi(e.data, e.timeStamp || performance.now());
+  outPort = [...midiAccess.outputs.values()].find(o => o.state === "connected" && /FP-?30|Roland/i.test(o.name)) || null;
+  soundVia = outPort ? "piano" : "laptop";
+  $("midi").innerHTML = ins.length ? "MIDI in: <b>" + ins.map(i => i.name).join(", ") + "</b>" + (outPort ? " · plays back through the piano" : " · plays back on the laptop")
+    : "No piano. Turn on the FP-30X's Bluetooth (hold Function, press the lowest A), then Audio MIDI Setup → MIDI Studio → Bluetooth → Connect.";
+}
+function onMidi(data, ms) {
+  const [st, d1, d2] = data, type = st & 0xf0;
+  if (type === 0x90 && d2 > 0) noteOn(d1, d2, ms);
+  else if (type === 0x80 || (type === 0x90 && d2 === 0)) noteOff(d1, ms);
+  else if (type === 0xB0 && d1 === 64) pedalChange(d2, ms);
+}
+window.__midi = (bytes, ms) => onMidi(bytes, ms == null ? performance.now() : ms); // for testing without a piano
+
+// ================================================================ write mode
+// Armed, Write waits for the first note and puts it at the cursor; with the
+// click on (and bars known) it counts in one bar and runs on the clock instead.
+let lastOnsetBefore = -1; // appending means writing after every existing onset
+const W = { armed: false, started: false, origin: 0, at: 0, open: new Map(), wrote: 0 };
+const songTime = ms => W.at + (ms - W.origin) / 1000;
+let noodles = [];
+function noteOn(p, v, ms) {
+  held.set(p, { ms, v });
+  if (W.armed && !playing) {
+    if (!W.started) { W.started = true; W.origin = ms; W.at = cursor; }
+    const n = { id: K.newId(), t: songTime(ms), d: 0.01, p, v };
+    if (n.t < 0) return;
+    doc.notes.push(n); W.open.set(p, n); W.wrote++; scoreDirty = true;
+  } else noodles.push({ ms, p, v, end: null });
+  $("write").classList.toggle("rolling", W.started);
+}
+function noteOff(p, ms) {
+  held.delete(p);
+  const n = W.open.get(p);
+  if (n) { n.d = Math.max(0.01, songTime(ms) - n.t); W.open.delete(p); scoreDirty = true; }
+  for (const x of noodles) if (x.p === p && x.end === null) x.end = ms;
+}
+function pedalChange(v, ms) { if (W.armed && W.started && !playing) { doc.pedal.push([songTime(ms), v]); scoreDirty = true; } }
+function toggleWrite() {
+  if (playing) stop();
+  if (!W.armed) {
+    snapshot();
+    Object.assign(W, { armed: true, started: false, open: new Map(), wrote: 0 }); lastOnsetBefore = doc.notes.reduce((e, n) => Math.max(e, n.t), -1);
+    if (view === "score" && score()) cursor = barStartSec(cursorBar());
+    if (metOn && doc.beats) startCountIn();
+    info(metOn && doc.beats ? "Writing. One bar of count-in, then play." : "Writing. Play when ready: your first note goes at the cursor.");
+  } else {
+    const now = performance.now();
+    for (const [p] of W.open) noteOff(p, now);
+    stopClick();
+    const wrote = W.wrote, started = W.started;
+    W.armed = false; W.started = false;
+    if (!wrote) undoStack.pop();
+    else {
+      doc.notes.sort((a, b) => a.t - b.t || a.p - b.p); doc.pedal.sort((a, b) => a[0] - b[0]);
+      // Appending: the beats past the write start were only extrapolated, so
+      // they are dropped and the new passage is tracked at its own tempo.
+      if (doc.beats && W.at >= lastOnsetBefore - 0.05) { doc.beats = doc.beats.filter(t => t <= W.at + 1e-6); doc.beats = K.extendTracking(doc); }
+      else if (doc.beats && docEnd() > doc.beats[doc.beats.length - 1]) doc.beats = K.extendTracking(doc);
+      cursor = Math.max(cursor, ...doc.notes.slice(-wrote).map(n => n.t + n.d));
+      if (view === "score" && score()) cursor = barStartSec(Math.min(score().nBars, Math.ceil(K.secToBeat(cursor, sc.beats) / sc.meter - 0.02)));
+    }
+    changed();
+    info(wrote ? `Wrote ${wrote} note${wrote > 1 ? "s" : ""}.` + (doc.beats ? "" : " Press <kbd>N</kbd> to see it as a score.") : started ? "" : "Write off. Nothing played.");
+  }
+  $("write").classList.toggle("on", W.armed); $("write").classList.toggle("rolling", false);
+}
+
+// ================================================================ sound
+let ctx = null, master = null, buffers = {}, loading = null;
+const LAYERS = { p: 45, f: 100 };
+function audio() {
+  if (ctx) return; ctx = new AudioContext();
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 3;
+  master = ctx.createGain(); master.gain.value = 2.2; const dry = ctx.createGain(), wet = ctx.createGain(); wet.gain.value = .22;
+  const conv = ctx.createConvolver(); const len = ctx.sampleRate * 2.4, ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+  conv.buffer = ir; master.connect(dry); master.connect(conv); conv.connect(wet); dry.connect(comp); wet.connect(comp); comp.connect(ctx.destination);
+}
+function loadPiano() {
+  if (loading) return loading; audio(); const jobs = [];
+  for (let p = 21; p < 109; p += 3) for (const L in LAYERS) jobs.push(fetch(`samples/${p}${L}.mp3`).then(r => { if (!r.ok) throw Error(r.status); return r.arrayBuffer(); }).then(b => ctx.decodeAudioData(b)).then(b => buffers[p + L] = b).catch(() => {}));
+  return loading = Promise.all(jobs);
+}
+function voice(p, v, when, end) {
+  const L = v < 72 ? "p" : "f", base = 21 + Math.round((p - 21) / 3) * 3, b = buffers[Math.min(108, Math.max(21, base)) + L];
+  const gn = ctx.createGain(); gn.connect(master); let src;
+  if (b) { src = ctx.createBufferSource(); src.buffer = b; src.playbackRate.value = Math.pow(2, (p - base) / 12); gn.gain.value = Math.min(1.8, v / LAYERS[L]) * .5; }
+  else { src = ctx.createOscillator(); src.type = "triangle"; src.frequency.value = 440 * Math.pow(2, (p - 69) / 12); gn.gain.value = 0.06 * v / 64; }
+  src.connect(gn); src.start(when); const stop = Math.min(end, when + 6.5); gn.gain.setTargetAtTime(0, stop, .07); src.stop(stop + .6);
+  voices.push(src); src.onended = () => { voices = voices.filter(x => x !== src); };
+}
+function audition(p, v = 70) {
+  if (soundVia === "piano" && outPort) { const t = performance.now(); outPort.send([0x90, p, v], t); outPort.send([0x80, p, 0], t + 700); return; }
+  loadPiano().then(() => { ctx.resume(); voice(p, v, ctx.currentTime + .01, ctx.currentTime + .8); });
+}
+
+// ================================================================ playback
+// Live plays the performance as recorded. Score plays the notation at one
+// steady tempo: the rubato is gone, which is how to hear what the score says.
+let playing = false, voices = [], plan = null, timer = null;
+async function play() {
+  if (W.armed) toggleWrite();
+  audio(); await loadPiano(); await ctx.resume();
+  const s = view === "score" ? score() : null;
+  let ev, pedal = [], from, startTick = 0;
+  if (s) { const m = cursorBar(); ev = K.scoreEvents(s, m); startTick = m * s.barLen; from = 0; }
+  else {
+    from = cursor >= docEnd() - 0.05 ? 0 : cursor; cursor = from;
+    const spans = K.pedalSpans(doc.pedal);
+    ev = doc.notes.filter(n => n.t >= from - 1e-6).map(n => ({ t: n.t - from, d: n.d, p: n.p, v: n.v, rel: K.releaseWithPedal(n.t + n.d, spans) - from }));
+    pedal = doc.pedal.filter(([t]) => t >= from).map(([t, v]) => [t - from, v]);
+  }
+  if (!ev.length) { info("Nothing after the cursor to play."); return; }
+  plan = { ev, pedal, i: 0, j: 0, ms0: performance.now() + 80, ctx0: ctx.currentTime + .08, from, s, startTick, end: Math.max(...ev.map(e => e.t + e.d)) };
+  playing = true; $("play").textContent = "Stop"; $("play").classList.add("on");
+  timer = setInterval(schedule, 25); schedule();
+}
+function schedule() {
+  const P = plan, ahead = (performance.now() - P.ms0) / 1000 + .25;
+  while (P.i < P.ev.length && P.ev[P.i].t < ahead) {
+    const e = P.ev[P.i++];
+    if (soundVia === "piano" && outPort) { outPort.send([0x90, e.p, e.v], P.ms0 + e.t * 1000); outPort.send([0x80, e.p, 0], P.ms0 + (e.t + e.d) * 1000); }
+    else voice(e.p, e.v, Math.max(ctx.currentTime, P.ctx0 + e.t), P.ctx0 + (e.rel != null ? e.rel : e.t + e.d));
+  }
+  while (P.j < P.pedal.length && P.pedal[P.j][0] < ahead) { const [t, v] = P.pedal[P.j++]; if (soundVia === "piano" && outPort) outPort.send([0xB0, 64, v], P.ms0 + t * 1000); }
+  if ((performance.now() - P.ms0) / 1000 > P.end + 0.6) stop(true);
+}
+function playPos() { return (performance.now() - plan.ms0) / 1000; }
+function stop(ended) {
+  if (!playing) return; clearInterval(timer); playing = false;
+  if (outPort) { outPort.send([0xB0, 64, 0]); outPort.send([0xB0, 123, 0]); }
+  for (const v of voices) { try { v.stop(); } catch (e) {} } voices = [];
+  if (!plan.s && !ended) cursor = plan.from + Math.max(0, playPos());
+  $("play").textContent = "Play"; $("play").classList.remove("on");
+}
+
+// ================================================================ click track
+let metOn = false, clickTimer = null;
+function blip(atMs, accent) {
+  audio(); ctx.resume(); const t = ctx.currentTime + Math.max(0, (atMs - performance.now()) / 1000);
+  const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = accent ? 1760 : 1175; g.gain.setValueAtTime(accent ? .25 : .15, t); g.gain.exponentialRampToValueAtTime(.001, t + .05);
+  o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + .06);
+}
+function startCountIn() {
+  const m = cursorBar(); K.ensureBars(doc, m + 64);
+  const k = doc.meter, b0 = m * k, iv = doc.beats[b0 + 1] - doc.beats[b0];
+  const now = performance.now() + 150;
+  W.started = true; W.at = doc.beats[b0]; W.origin = now + k * iv * 1000;
+  const ticks = []; for (let i = 0; i < k; i++) ticks.push([now + i * iv * 1000, i === 0]);
+  for (let i = b0; i < doc.beats.length; i++) ticks.push([W.origin + (doc.beats[i] - W.at) * 1000, (i % k) === 0]);
+  let j = 0;
+  clickTimer = setInterval(() => { const h = performance.now() + 120; while (j < ticks.length && ticks[j][0] < h) { blip(ticks[j][0], ticks[j][1]); j++; } }, 30);
+  $("write").classList.add("rolling");
+}
+function stopClick() { clearInterval(clickTimer); clickTimer = null; }
+
+// ================================================================ Live view
+// The performance as it is: one dot per note at its pitch, a bar as long as
+// it was held. Nothing is assumed about values or bars.
+const cvL = $("live"), gL = cvL.getContext("2d");
+let LW = 0, LH = 0, pps = 110, hs = 6, yC4 = 0, vt = 0; // vt: the time at the left anchor
+const RULER = 22, PEDAL = 16, X0F = .22;
+const X0 = () => LW * X0F, px = t => X0() + (t - vt) * pps, tx = x => vt + (x - X0()) / pps;
+let liveKey = K.keyByName("C major");
+function resizeLive() {
+  const dpr = devicePixelRatio || 1; LW = cvL.clientWidth; LH = cvL.clientHeight; cvL.width = LW * dpr; cvL.height = LH * dpr; gL.setTransform(dpr, 0, 0, dpr, 0, 0);
+  let lo = 14, hi = 42; for (const n of doc.notes) { const s = K.spell(n.p, liveKey).step; lo = Math.min(lo, s); hi = Math.max(hi, s); }
+  hs = Math.max(3, Math.min(8, (LH - RULER - PEDAL - 28) / (hi - lo + 2)));
+  yC4 = (RULER + 12 + LH - PEDAL - 12) / 2 + ((hi + lo) / 2 - 28) * hs;
+}
+const ysL = s => yC4 - (s - 28) * hs;
+function drawLive() {
+  if (!LW) return; const C = colors(), g = gL;
+  g.clearRect(0, 0, LW, LH);
+  // follow whatever is moving
+  let head = null;
+  if (W.started) head = songTime(performance.now());
+  else if (playing && !plan.s) head = plan.from + playPos();
+  if (head != null && (px(head) > LW * .8 || px(head) < 0)) vt = head - (LW * .5) / pps;
+  // ruler and bars
+  g.fillStyle = C.mut; g.font = "11px -apple-system,system-ui"; g.strokeStyle = C.line; g.lineWidth = 1;
+  const t0 = tx(0), t1 = tx(LW), st = pps > 200 ? 1 : pps > 60 ? 5 : pps > 25 ? 10 : 30;
+  for (let t = Math.ceil(t0 / st) * st; t < t1; t += st) { if (t < 0) continue; const x = px(t); g.beginPath(); g.moveTo(x, RULER - 6); g.lineTo(x, RULER); g.stroke(); g.fillText(mmss(t, 0), x + 3, RULER - 8); }
+  g.beginPath(); g.moveTo(0, RULER + .5); g.lineTo(LW, RULER + .5); g.stroke();
+  if (doc.beats) {
+    const b = K.extendBeats(doc.beats, Math.max(docEnd(), t1)), k = doc.meter;
+    for (let i = 0; i < b.length; i++) { const x = px(b[i]); if (x < -2 || x > LW + 2) continue;
+      g.strokeStyle = C.line; g.globalAlpha = i % k ? .35 : 1; g.beginPath(); g.moveTo(Math.round(x) + .5, RULER); g.lineTo(Math.round(x) + .5, LH - PEDAL); g.stroke(); g.globalAlpha = 1;
+      if (i % k === 0) { g.fillStyle = C.acc; g.fillText(String(i / k + 1), x + 3, RULER + 12); } }
+  }
+  // staves
+  g.strokeStyle = C.staff; g.lineWidth = 1;
+  for (const s of [18, 20, 22, 24, 26, 30, 32, 34, 36, 38]) { const y = Math.round(ysL(s)) + .5; g.beginPath(); g.moveTo(0, y); g.lineTo(LW, y); g.stroke(); }
+  g.fillStyle = C.staff; clef(g, "𝄞", 4, ysL(38) - 5.2 * hs, ysL(30) + 3.4 * hs); clef(g, "𝄢", 5, ysL(26) - 0.2 * hs, ysL(18) - 1.8 * hs);
+  // pedal
+  const py = LH - PEDAL + 4;
+  for (const [a, b] of K.pedalSpans(doc.pedal)) { const xa = px(a), xb = px(Math.min(b, Math.max(docEnd(), head || 0))); if (xb < 0 || xa > LW) continue; g.fillStyle = C.mut; g.globalAlpha = .35; g.fillRect(xa, py, Math.max(1, xb - xa), 5); g.globalAlpha = 1; }
+  // notes: the document, then what is being played but not written
+  const nowMs = performance.now();
+  const drawNote = (t, d, p, v, col, alpha) => {
+    const x = px(t), xe = px(t + d); if (xe < -20 || x > LW + 20) return;
+    const sp = K.spell(p, liveKey), s = sp.step, y = ysL(s), rx = hs * 1.2, ry = hs * .86;
+    g.strokeStyle = C.staff; g.lineWidth = 1; g.globalAlpha = alpha;
+    const led = []; if (p >= 60) { for (let k = 40; k <= s; k += 2) led.push(k); if (s <= 28) for (let k = 28; k >= s; k -= 2) led.push(k); } else { for (let k = 16; k >= s; k -= 2) led.push(k); if (s >= 28) for (let k = 28; k <= s; k += 2) led.push(k); }
+    for (const k of led) { const yy = Math.round(ysL(k)) + .5; g.beginPath(); g.moveTo(x - rx * 1.6, yy); g.lineTo(x + rx * 1.6, yy); g.stroke(); }
+    g.fillStyle = col; g.globalAlpha = alpha * .18; g.fillRect(x, y - ry * .55, Math.max(0, xe - x), ry * 1.1);
+    g.globalAlpha = alpha * (.4 + .6 * v / 127); g.beginPath(); g.ellipse(x, y, rx, ry, -.35, 0, 7); g.fill();
+    if (sp.a) { g.font = `${hs * 2.6}px -apple-system,system-ui`; g.fillText(sp.a > 0 ? "♯" : "♭", x - rx * 2.9, y + hs * .9); }
+    g.globalAlpha = 1;
+  };
+  const songNow = W.started ? songTime(nowMs) : null;
+  for (const n of doc.notes) { const d = W.open.get(n.p) === n ? songNow - n.t : n.d; drawNote(n.t, d, n.p, n.v, C.head, 1); }
+  noodles = noodles.filter(x => x.end === null || nowMs - x.end < 6000);
+  for (const x of noodles) { const t = cursor + (x.ms - nowMs) / 1000, d = ((x.end || nowMs) - x.ms) / 1000, fade = x.end ? 1 - (nowMs - x.end) / 6000 : 1; drawNote(t, d, x.p, x.v, C.acc, .7 * fade); }
+  // cursor and playhead
+  const xc = px(cursor);
+  g.strokeStyle = W.armed ? C.rec : C.acc; g.lineWidth = 2; g.beginPath(); g.moveTo(xc, RULER); g.lineTo(xc, LH); g.stroke();
+  g.fillStyle = W.armed ? C.rec : C.acc; g.beginPath(); g.moveTo(xc - 6, RULER); g.lineTo(xc + 6, RULER); g.lineTo(xc, RULER + 8); g.fill();
+  if (head != null) { const xh = px(head); g.strokeStyle = W.started ? C.rec : C.sel; g.lineWidth = 2; g.beginPath(); g.moveTo(xh, RULER); g.lineTo(xh, LH); g.stroke(); }
+}
+cvL.addEventListener("pointerdown", e => { const r = cvL.getBoundingClientRect(); const t = tx(e.clientX - r.left); if (W.started) return; if (playing) stop(); cursor = Math.max(0, t); info(`Cursor at ${mmss(cursor, 2)}.`); });
+cvL.addEventListener("wheel", e => { e.preventDefault(); if (e.ctrlKey) { zoom(e.deltaY < 0 ? 1.15 : 1 / 1.15); return; } vt += (e.deltaX || e.deltaY) / pps; }, { passive: false });
+function zoom(f) { pps = Math.min(800, Math.max(8, pps * f)); }
+
+// ================================================================ Score view
+// Classical notation drawn from primitives: barred, keyed, valued, beamed.
+const cvS = $("score"), gS = cvS.getContext("2d");
+const LS = 10, HS = LS / 2, SYS_H = 210, TOP = 18;
+let SW = 0, layout = null, heads = [];
+function layoutScore(s) {
+  const bars = s.bars.map(bar => {
+    const ticks = new Map();
+    for (const st of bar.staves) for (const e of st) {
+      const t = e.tick - bar.start, o = ticks.get(t) || { len: 1e9, acc: 0, dot: 0 };
+      o.len = Math.min(o.len, e.len); if (!e.rest && e.notes.some(n => n.acc != null)) o.acc = 1; if (e.dots) o.dot = 1; ticks.set(t, o);
+    }
+    const ts = [...ticks.keys()].sort((a, b) => a - b), pos = new Map(); let x = 14;
+    for (const t of ts) { const o = ticks.get(t); if (o.acc) x += 10; pos.set(t, x); x += (o.len >= bar.len ? 40 : 14 + 24 * Math.sqrt(o.len / TPB)) + (o.dot ? 6 : 0); }
+    return { bar, pos, w: Math.max(x + 8, 56) };
+  });
+  const prefix = (i) => 46 + Math.abs(s.key.fifths) * 9 + 10 + (i === 0 ? 26 : 0);
+  const systems = []; let cur = null;
+  for (const b of bars) {
+    if (!cur || prefix(systems.length - 1) + cur.w + b.w > SW - 16) { cur = { bars: [], w: 0 }; systems.push(cur); }
+    cur.bars.push(b); cur.w += b.w;
+  }
+  systems.forEach((sy, i) => {
+    const pre = prefix(i), avail = SW - 16 - pre;
+    let f = avail / sy.w; if (i === systems.length - 1 && f > 1.25) f = 1;
+    let x = 8 + pre; sy.x0 = 8; sy.pre = pre; sy.y = TOP + i * SYS_H;
+    for (const b of sy.bars) { b.x = x; b.w *= f; b.f = f; b.sys = i; x += b.w; }
+    sy.x1 = x;
+  });
+  return { bars, systems };
+}
+const yT = (sy, step) => sy.y + 46 + (38 - step) * HS;
+const yB = (sy, step) => sy.y + 46 + 4 * LS + 62 + (26 - step) * HS;
+function tickX(b, t) { // t within bar
+  const ts = [...b.pos.keys()];
+  if (b.pos.has(t)) return b.x + b.pos.get(t) * b.f;
+  let lo = 0, hi = b.bar.len, xl = 14, xh = b.w / b.f - 8;
+  for (const k of ts) { if (k <= t && k >= lo) { lo = k; xl = b.pos.get(k); } if (k > t && k <= hi) { hi = k; xh = b.pos.get(k); } }
+  return b.x + (xl + (xh - xl) * (t - lo) / Math.max(1, hi - lo)) * b.f;
+}
+function drawScore() {
+  const C = colors(), g = gS, s = score();
+  SW = cvS.clientWidth || cvS.parentElement.clientWidth;
+  heads = [];
+  if (!s) {
+    const h = 260, dpr = devicePixelRatio || 1; cvS.style.height = h + "px"; cvS.width = SW * dpr; cvS.height = h * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, SW, h); g.fillStyle = C.mut; g.font = "15px -apple-system,system-ui";
+    g.fillText(doc.notes.length ? "Press N to find the key, tempo and bars." : "Nothing written yet. Press W, then play.", 24, 40); return;
+  }
+  if (!layout || layout.s !== s || layout.SW !== SW) { layout = layoutScore(s); layout.s = s; layout.SW = SW; }
+  const { bars, systems } = layout;
+  const H = TOP + systems.length * SYS_H + 10, dpr = devicePixelRatio || 1;
+  if (cvS.height !== Math.round(H * dpr) || cvS.width !== Math.round(SW * dpr)) { cvS.style.height = H + "px"; cvS.width = SW * dpr; cvS.height = H * dpr; }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, SW, H);
+  const cb = cursorBar();
+  // selection
+  if (sel) for (let m = sel[0]; m <= sel[1]; m++) { const b = bars[m]; if (!b) continue; const sy = systems[b.sys]; g.fillStyle = C.acc; g.globalAlpha = .1; g.fillRect(b.x, yT(sy, 44), b.w, yB(sy, 12) - yT(sy, 44)); g.globalAlpha = 1; }
+  for (const [i, sy] of systems.entries()) {
+    g.strokeStyle = C.staff; g.lineWidth = 1;
+    for (const y0 of [yT(sy, 38), yB(sy, 26)]) for (let l = 0; l < 5; l++) { const y = Math.round(y0 + l * LS) + .5; g.beginPath(); g.moveTo(sy.x0, y); g.lineTo(sy.x1, y); g.stroke(); }
+    // system line and brace
+    g.lineWidth = 1.5; g.beginPath(); g.moveTo(sy.x0 + .5, yT(sy, 38)); g.lineTo(sy.x0 + .5, yB(sy, 18)); g.stroke();
+    g.lineWidth = 1; g.beginPath(); g.moveTo(sy.x1 - .5, yT(sy, 38)); g.lineTo(sy.x1 - .5, yB(sy, 18)); g.stroke();
+    g.fillStyle = C.fg;
+    clef(g, "𝄞", sy.x0 + 4, yT(sy, 38) - 2.6 * LS, yT(sy, 30) + 1.7 * LS);
+    clef(g, "𝄢", sy.x0 + 5, yB(sy, 26) - 0.1 * LS, yB(sy, 18) - 0.9 * LS);
+    // key signature
+    const f = s.key.fifths, sh = [38, 35, 39, 36, 33, 37, 34], fl = [34, 37, 33, 36, 32, 35, 31];
+    for (let k = 0; k < Math.abs(f); k++) { const st = f > 0 ? sh[k] : fl[k], x = sy.x0 + 48 + k * 9;
+      accidental(g, Math.sign(f), x, yT(sy, st), C.fg); accidental(g, Math.sign(f), x, yB(sy, st - 14), C.fg); }
+    if (i === 0) { g.font = `bold ${LS * 2.1}px serif`; const x = sy.x0 + 46 + Math.abs(f) * 9 + 4;
+      for (const yy of [yT(sy, 38), yB(sy, 26)]) { g.fillText(String(s.meter), x, yy + LS * 1.85); g.fillText("4", x, yy + LS * 3.85); } }
+    g.fillStyle = C.mut; g.font = "11px -apple-system,system-ui"; g.fillText(String(sy.bars[0].bar.index + 1), sy.x0 + 2, yT(sy, 38) - 18);
+  }
+  for (const b of bars) {
+    const sy = systems[b.sys];
+    g.strokeStyle = C.staff; g.lineWidth = 1; const xb = Math.round(b.x + b.w) + .5;
+    if (b !== bars[bars.length - 1]) { g.beginPath(); g.moveTo(xb, yT(sy, 38)); g.lineTo(xb, yB(sy, 18)); g.stroke(); }
+    else { g.strokeStyle = C.fg; g.lineWidth = 1; g.beginPath(); g.moveTo(xb - 5, yT(sy, 38)); g.lineTo(xb - 5, yB(sy, 18)); g.stroke(); g.fillStyle = C.fg; g.fillRect(xb - 3, yT(sy, 38), 3.5, yB(sy, 18) - yT(sy, 38)); }
+    for (const st of [0, 1]) drawStaffBar(g, C, b, sy, st);
+  }
+  drawTies(g, C, bars, systems);
+  // cursor
+  const at = cb < bars.length ? bars[cb] : bars[bars.length - 1], sy = systems[at.sys], xc = cb < bars.length ? at.x + 3 : at.x + at.w - 8;
+  g.strokeStyle = W.armed ? C.rec : C.acc; g.lineWidth = 2.5; g.beginPath(); g.moveTo(xc, yT(sy, 44)); g.lineTo(xc, yB(sy, 12)); g.stroke();
+  // playhead
+  let tick = null;
+  if (playing && plan.s) tick = plan.startTick + playPos() * s.bpm / 60 * TPB;
+  else if (W.started) tick = K.secToBeat(songTime(performance.now()), s.beats) * TPB;
+  if (tick != null && tick >= 0) {
+    const m = Math.min(bars.length - 1, Math.floor(tick / s.barLen)), b = bars[m], y = systems[b.sys];
+    const x = tickX(b, Math.min(b.bar.len, tick - b.bar.start));
+    g.strokeStyle = W.started ? C.rec : C.sel; g.lineWidth = 2; g.beginPath(); g.moveTo(x, yT(y, 42)); g.lineTo(x, yB(y, 14)); g.stroke();
+    const wrap = $("wrap"), top = y.y - 10; if (top < wrap.scrollTop || top + SYS_H > wrap.scrollTop + wrap.clientHeight) wrap.scrollTop = top;
+  }
+}
+function drawStaffBar(g, C, b, sy, st) {
+  const Y = st === 0 ? s => yT(sy, s) : s => yB(sy, s), mid = st === 0 ? 34 : 22;
+  const evs = b.bar.staves[st], rx = HS * 1.18, ry = HS * .85;
+  // beam groups: two or more eighths or shorter inside one beat
+  const groups = []; let gcur = [];
+  const flush = () => { if (gcur.length > 1) groups.push(gcur); gcur = []; };
+  for (const e of evs) {
+    const beamable = !e.rest && (e.base === "e" || e.base === "s");
+    if (beamable && gcur.length && Math.floor(gcur[0].tick / TPB) === Math.floor(e.tick / TPB) && gcur[0].tri === e.tri) gcur.push(e);
+    else { flush(); if (beamable) gcur.push(e); }
+  }
+  flush();
+  const inGroup = new Map(); groups.forEach(gr => gr.forEach(e => inGroup.set(e, gr)));
+  const dirOf = list => { let a = 0, c = 0; for (const e of list) for (const n of e.notes) { a += n.step; c++; } return a / c < mid; };
+  const stemTip = new Map();
+  for (const gr of groups) {
+    const up = dirOf(gr), xs = gr.map(e => tickX(b, e.tick - b.bar.start));
+    let by = up ? Infinity : -Infinity;
+    gr.forEach(e => { const hi = Math.max(...e.notes.map(n => n.step)), lo = Math.min(...e.notes.map(n => n.step));
+      by = up ? Math.min(by, Y(hi) - 3.5 * LS, Y(mid)) : Math.max(by, Y(lo) + 3.5 * LS, Y(mid)); });
+    gr.up = up; gr.by = by; gr.xs = xs.map(x => up ? x + rx - .6 : x - rx + .6);
+  }
+  for (const e of evs) {
+    const x = tickX(b, e.tick - b.bar.start);
+    if (e.rest) { drawRest(g, C, e.wholeBar ? b.x + b.w / 2 : x, Y, mid, e); continue; }
+    const gr = inGroup.get(e), up = gr ? gr.up : dirOf([e]);
+    const steps = e.notes.map(n => n.step), hi = Math.max(...steps), lo = Math.min(...steps);
+    // heads, with seconds pushed to the far side of the stem
+    const order = [...e.notes].sort((a, c) => up ? a.step - c.step : c.step - a.step); let prev = null, prevShift = false;
+    const hollow = e.base === "h" || e.base === "w";
+    let accCol = 0, lastAccStep = null;
+    for (const n of order) {
+      const shift = prev !== null && Math.abs(n.step - prev) === 1 && !prevShift;
+      const hx = x + (shift ? (up ? 2 * rx - 1 : -2 * rx + 1) : 0), hy = Y(n.step);
+      // ledger lines
+      g.strokeStyle = C.staff; g.lineWidth = 1;
+      const led = []; if (st === 0) { for (let k = 40; k <= n.step; k += 2) led.push(k); for (let k = 28; k >= n.step; k -= 2) led.push(k); } else { for (let k = 16; k >= n.step; k -= 2) led.push(k); for (let k = 28; k <= n.step; k += 2) led.push(k); }
+      for (const k of led) { const yy = Math.round(Y(k)) + .5; g.beginPath(); g.moveTo(hx - rx * 1.7, yy); g.lineTo(hx + rx * 1.7, yy); g.stroke(); }
+      g.fillStyle = C.head; g.strokeStyle = C.head;
+      g.beginPath(); g.ellipse(hx, hy, rx, ry, -.35, 0, 7);
+      if (hollow) { g.lineWidth = 1.6; g.stroke(); } else g.fill();
+      if (n.acc != null) {
+        if (lastAccStep !== null && Math.abs(lastAccStep - n.step) < 6) accCol++; else accCol = 0;
+        accidental(g, n.acc, x - rx - 7 - accCol * 9, hy, C.head); lastAccStep = n.step;
+      }
+      for (let d = 0; d < e.dots; d++) { const dy = (n.step % 2 === (st === 0 ? 0 : 0)) ? -HS * .9 : 0; g.beginPath(); g.arc(x + rx + 5 + d * 5 + (shift && up ? 2 * rx : 0), hy + (onLine(n.step, st) ? -HS : 0), 1.6, 0, 7); g.fill(); }
+      heads.push({ x: hx, y: hy, n, e, bar: b.bar.index, up });
+      prev = n.step; prevShift = shift;
+    }
+    if (e.base !== "w") {
+      const sx = gr ? gr.xs[gr.indexOf(e)] : (up ? x + rx - .6 : x - rx + .6);
+      const tip = gr ? gr.by : (up ? Y(hi) - 3.5 * LS : Y(lo) + 3.5 * LS);
+      g.strokeStyle = C.head; g.lineWidth = 1.2; g.beginPath(); g.moveTo(sx, up ? Y(lo) : Y(hi)); g.lineTo(sx, tip); g.stroke();
+      stemTip.set(e, [sx, tip, up]);
+      if (!gr && (e.base === "e" || e.base === "s")) { // flags
+        for (let k = 0; k < (e.base === "s" ? 2 : 1); k++) { const fy = tip + (up ? k * 7 : -k * 7);
+          g.beginPath(); g.moveTo(sx, fy); g.bezierCurveTo(sx + 2, fy + (up ? 8 : -8), sx + 11, fy + (up ? 10 : -10), sx + 7, fy + (up ? 22 : -22)); g.lineWidth = 1.8; g.stroke(); }
+      }
+      if (e.tri && !gr) { g.fillStyle = C.mut; g.font = "italic 11px serif"; g.fillText("3", x - 3, up ? tip - 4 : tip + 12); }
+    }
+  }
+  // beams
+  for (const gr of groups) {
+    g.fillStyle = C.head; const th = LS * .45, x1 = gr.xs[0], x2 = gr.xs[gr.length - 1];
+    g.fillRect(x1, gr.up ? gr.by : gr.by - th, x2 - x1 + 1, th);
+    const y2 = gr.up ? gr.by + th * 1.7 : gr.by - th * 2.7;
+    gr.forEach((e, i) => { if (e.base !== "s") return; const nx = gr[i + 1], pv = gr[i - 1];
+      if (nx && nx.base === "s") g.fillRect(gr.xs[i], y2, gr.xs[i + 1] - gr.xs[i] + 1, th);
+      else if (!(pv && pv.base === "s")) { const L = 8; nx ? g.fillRect(gr.xs[i], y2, L, th) : g.fillRect(gr.xs[i] - L, y2, L, th); } });
+    if (gr[0].tri) { g.fillStyle = C.mut; g.font = "italic 11px serif"; g.fillText("3", (x1 + x2) / 2 - 3, gr.up ? gr.by - 5 : gr.by + 13); }
+  }
+}
+// A clef glyph scaled from its measured ink so it spans exactly [top, bottom]:
+// fonts disagree about how big a clef is at a given size, so none is trusted.
+const CLEF_FONT = '"Apple Symbols","Noto Music","Bravura",serif';
+function clef(g, ch, x, top, bottom) {
+  g.font = `100px ${CLEF_FONT}`; const m = g.measureText(ch);
+  const ink = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent; if (!ink) return;
+  const size = 100 * (bottom - top) / ink; g.font = `${size}px ${CLEF_FONT}`;
+  g.fillText(ch, x, top + m.actualBoundingBoxAscent * size / 100);
+}
+// Accidentals from strokes, centred on (x, y): a system font's ♯ sits on its
+// own baseline and lands a space too high on the staff.
+function accidental(g, a, x, y, col) {
+  g.strokeStyle = col; g.fillStyle = col;
+  const line = (x1, y1, x2, y2, w) => { g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); };
+  if (a > 0) { line(x - 1.6, y - 9, x - 1.6, y + 8, 1.1); line(x + 1.8, y - 10, x + 1.8, y + 7, 1.1); line(x - 4, y - 2, x + 4, y - 4.5, 2.4); line(x - 4, y + 4, x + 4, y + 1.5, 2.4); }
+  else if (a < 0) { line(x - 2.5, y - 13, x - 2.5, y + 4.5, 1.2); g.lineWidth = 1.7; g.beginPath(); g.moveTo(x - 2.5, y + 4.5); g.bezierCurveTo(x + 5.5, y + 0.5, x + 4.5, y - 6, x - 2.5, y - 1.5); g.stroke(); }
+  else { line(x - 2.2, y - 10, x - 2.2, y + 4, 1.1); line(x + 2.2, y - 4, x + 2.2, y + 10, 1.1); line(x - 2.2, y + 3.5, x + 2.2, y + 2, 2.4); line(x - 2.2, y - 2, x + 2.2, y - 3.5, 2.4); }
+}
+const onLine = (step, st) => (st === 0 ? (step - 30) : (step - 18)) % 2 === 0;
+function drawRest(g, C, x, Y, mid, e) {
+  g.fillStyle = C.head; g.strokeStyle = C.head; g.lineWidth = 1.6;
+  if (e.base === "w") g.fillRect(x - 6, Y(mid + 2), 12, HS);
+  else if (e.base === "h") g.fillRect(x - 6, Y(mid) - HS, 12, HS);
+  else if (e.base === "q") { const y = Y(mid); g.lineWidth = 2.2; g.beginPath(); g.moveTo(x - 2, y - 15); g.lineTo(x + 3, y - 8); g.lineTo(x - 2, y - 2); g.lineTo(x + 3, y + 4); g.quadraticCurveTo(x - 6, y + 2, x + 1, y + 12); g.stroke(); }
+  else { const y = Y(mid), n = e.base === "s" ? 2 : 1;
+    for (let k = 0; k < n; k++) { g.beginPath(); g.arc(x - 3 - k * 2, y - 5 + k * 9, 2.4, 0, 7); g.fill(); }
+    g.lineWidth = 1.5; g.beginPath(); g.moveTo(x + 3, y - 6); g.lineTo(x - 2 - (n - 1) * 3, y + 10 + (n - 1) * 8); g.stroke(); g.beginPath(); g.moveTo(x - 3, y - 5); g.quadraticCurveTo(x, y - 3, x + 3, y - 6); g.stroke(); }
+  for (let d = 0; d < e.dots; d++) { g.beginPath(); g.arc(x + 9 + d * 5, Y(mid + 1), 1.6, 0, 7); g.fill(); }
+  if (e.tri) { g.fillStyle = C.mut; g.font = "italic 11px serif"; g.fillText("3", x - 3, Y(mid + 7)); }
+}
+function drawTies(g, C, bars, systems) {
+  const byStaff = [[], []];
+  for (const h of heads) byStaff[h.y > yT(systems[bars[h.bar].sys], 20) ? 1 : 0].push(h);
+  for (const hs of byStaff) {
+    for (const h of hs) {
+      if (!h.n.tieNext) continue;
+      const nx = hs.find(o => o.n.p === h.n.p && o.n.tied && o.e.tick === h.e.tick + h.e.len);
+      const rx = HS * 1.18, dir = h.up ? 1 : -1, y = h.y + dir * (HS + 2);
+      g.strokeStyle = C.head; g.lineWidth = 1.3;
+      const arc = (x1, x2, yy) => { g.beginPath(); g.moveTo(x1, yy); g.quadraticCurveTo((x1 + x2) / 2, yy + dir * 8, x2, yy); g.stroke(); };
+      if (nx && bars[nx.bar].sys === bars[h.bar].sys) arc(h.x + rx + 1, nx.x - rx - 1, y);
+      else { const sy = systems[bars[h.bar].sys]; arc(h.x + rx + 1, sy.x1 - 2, y); if (nx) { const sy2 = systems[bars[nx.bar].sys]; arc(sy2.x0 + sy2.pre - 8, nx.x - rx - 1, nx.y + dir * (HS + 2)); } }
+    }
+  }
+}
+cvS.addEventListener("pointerdown", e => {
+  const s = score(); if (!s || !layout || W.started) return;
+  if (playing) stop();
+  const r = cvS.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  // a notehead: say what it is and sound it
+  const h = heads.find(h => Math.abs(h.x - x) < 7 && Math.abs(h.y - y) < 6);
+  const si = Math.floor((y - TOP) / SYS_H), sy = layout.systems[si];
+  let m = null;
+  if (sy) { const b = sy.bars.find(b => x >= b.x && x < b.x + b.w); m = b ? b.bar.index : (x >= sy.x1 ? (si === layout.systems.length - 1 ? s.nBars : sy.bars[sy.bars.length - 1].bar.index + 1) : sy.bars[0].bar.index); }
+  if (m === null) return;
+  if (m >= s.nBars) { sel = null; cursor = barStartSec(s.nBars); info(`Cursor after the last bar. Paste or Write goes there.`); return; }
+  if (e.shiftKey && sel) sel = [Math.min(sel[0], m), Math.max(sel[1], m)];
+  else sel = [m, m];
+  cursor = barStartSec(sel[0]);
+  if (h && !e.shiftKey) {
+    audition(h.n.p, h.n.v);
+    const names = { w: "whole note", h: "half note", q: "quarter note", e: "eighth note", s: "sixteenth note" };
+    info(`<b>${h.n.name}</b>, a ${h.e.dots ? "dotted " : ""}${h.e.tri ? "triplet " : ""}${names[h.e.base]}${h.n.tieNext || h.n.tied ? ", tied" : ""}, in bar ${m + 1}. ${clip ? "" : "<kbd>⌘C</kbd> copies this bar."}`);
+  } else info(sel[0] === sel[1] ? `Bar ${m + 1}. <kbd>⌘C</kbd> copy · <kbd>⌘V</kbd> paste before it · <kbd>⌫</kbd> delete · <kbd>W</kbd> write from here` : `Bars ${sel[0] + 1}–${sel[1] + 1}. <kbd>⌘C</kbd> copy · <kbd>⌫</kbd> delete`);
+});
+
+// ================================================================ bar edits
+function copySel() { if (!sel || !score()) return; clip = K.copyBars(doc, sel[0], sel[1]); info(`Copied ${clip.bars} bar${clip.bars > 1 ? "s" : ""}. Click where they should go, then <kbd>⌘V</kbd>.`); }
+function pasteClip() {
+  if (!clip) { info("Nothing copied yet. Click a bar in the Score, then <kbd>⌘C</kbd>."); return; }
+  if (!score()) { info("Paste works on bars: press <kbd>N</kbd> first."); return; }
+  if (clip.meter !== doc.meter) { info(`Those bars are in ${clip.meter}/4 and this piece is now in ${doc.meter}/4.`); return; }
+  const c = cursorBar(); snapshot(); K.pasteBars(doc, clip, c); changed();
+  sel = [c, c + clip.bars - 1]; cursor = barStartSec(c + clip.bars);
+  info(`Pasted ${clip.bars} bar${clip.bars > 1 ? "s" : ""} as bar${clip.bars > 1 ? "s" : ""} ${c + 1}${clip.bars > 1 ? "–" + (c + clip.bars) : ""}. Everything after moved along.`);
+}
+function deleteSel() {
+  if (!sel || !score()) return; snapshot(); const [a, b] = sel; K.deleteBars(doc, a, b); changed();
+  sel = null; cursor = barStartSec(a); info(`Deleted bar${a === b ? " " + (a + 1) : "s " + (a + 1) + "–" + (b + 1)}. <kbd>⌘Z</kbd> brings ${a === b ? "it" : "them"} back.`);
+}
+
+// ================================================================ views and controls
+function setView(v) {
+  if (v === "score" && !doc.beats) {
+    if (!doc.notes.length) { info("Nothing to notate yet. Press <kbd>W</kbd> and play."); }
+    else { snapshot(); Object.assign(doc, K.detect(doc)); changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${s.meter}/4</b>, ♩ ≈ <b>${Math.round(s.bpm)}</b>, ${s.nBars} bar${s.nBars > 1 ? "s" : ""}. Any of these can be changed above.`); }
+  }
+  view = v; $("live").hidden = v !== "live"; $("score").hidden = v !== "score";
+  $("vLive").classList.toggle("on", v === "live"); $("vScore").classList.toggle("on", v === "score");
+  if (v === "live") resizeLive();
+  layout = null; refresh();
+}
+function refresh() {
+  const s = doc.beats ? score() : null;
+  $("scoreCtl").style.display = s ? "" : "none";
+  if (s) {
+    const ks = $("key"); if (!ks.options.length) { ks.innerHTML = `<option value="">auto</option>` + K.KEYS.map(k => `<option>${k.name}</option>`).join(""); }
+    ks.options[0].textContent = "Key: auto (" + (K.keyByName(doc.key) || s.key).name + ")"; ks.value = doc.keyOverride || "";
+    $("meter").value = String(doc.meter); $("bpm").textContent = Math.round(s.bpm);
+    liveKey = s.key;
+  }
+  $("undo").disabled = !undoStack.length;
+  $("met").classList.toggle("on", metOn);
+}
+$("write").onclick = toggleWrite;
+$("vLive").onclick = () => setView("live"); $("vScore").onclick = () => setView("score");
+$("play").onclick = () => playing ? stop() : play();
+$("met").onclick = () => { metOn = !metOn; refresh(); info(metOn ? (doc.beats ? "Click on. Writing counts in one bar and follows the score's beat." : "Click on. It runs once the piece has bars (press N).") : "Click off."); };
+$("undo").onclick = undo;
+$("new").onclick = () => { if (!doc.notes.length) return; snapshot(); doc = empty(); cursor = 0; vt = 0; sel = null; changed(); setView("live"); info("New piece. <kbd>⌘Z</kbd> brings the last one back."); };
+$("demo").onclick = () => { snapshot(); const d = K.demoDoc(Math.floor(Math.random() * 1000) + 1); delete d.truth; doc = d; cursor = 0; vt = 0; sel = null; changed(); setView("live"); info("A demo take: eight bars played with rubato. Press <kbd>Space</kbd> to hear it, <kbd>N</kbd> to see it as a score."); };
+$("key").onchange = e => { snapshot(); doc.keyOverride = e.target.value || null; changed(); layout = null; };
+$("meter").onchange = e => { snapshot(); doc.meter = +e.target.value; sel = null; changed(); layout = null; };
+$("half").onclick = () => { snapshot(); K.scaleTempo(doc, 0.5); sel = null; changed(); };
+$("dbl").onclick = () => { snapshot(); K.scaleTempo(doc, 2); sel = null; changed(); };
+$("redetect").onclick = () => { snapshot(); doc.beats = null; Object.assign(doc, K.detect(doc)); doc.keyOverride = null; sel = null; changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${s.meter}/4</b>, ♩ ≈ <b>${Math.round(s.bpm)}</b>.`); };
+
+// files
+function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+const stamp = () => new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+$("save").onclick = async () => {
+  const text = JSON.stringify(doc), name = `compose-${stamp()}.json`;
+  if (window.showSaveFilePicker) { try { const h = await showSaveFilePicker({ suggestedName: name, id: "compose", types: [{ description: "Compose piece", accept: { "application/json": [".json"] } }] }); const w = await h.createWritable(); await w.write(text); await w.close(); info(`Saved ${h.name}.`); } catch (e) { if (e.name !== "AbortError") info("Save failed: " + e.message); } }
+  else download(new Blob([text], { type: "application/json" }), name);
+};
+$("open").onclick = () => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = async () => { try { const d = JSON.parse(await i.files[0].text()); if (d.format !== "compose") throw Error("not a Compose file"); snapshot(); doc = d; cursor = 0; vt = 0; sel = null; changed(); setView(doc.beats ? "score" : "live"); info(`Opened ${i.files[0].name}.`); } catch (e) { info("Could not open: " + e.message); } }; i.click(); };
+$("mid").onclick = () => {
+  const s = doc.beats ? score() : null;
+  if (s) download(new Blob([K.smf(K.scoreEvents(s, 0), s.bpm, s.meter)], { type: "audio/midi" }), `compose-${stamp()}-score.mid`);
+  else { const ev = doc.notes.map(n => ({ t: n.t, d: n.d, p: n.p, v: n.v })); ev.pedal = doc.pedal; download(new Blob([K.smf(ev, 120, null)], { type: "audio/midi" }), `compose-${stamp()}-played.mid`); }
+  info(s ? "MIDI file of the score: steady tempo, bars and time signature included. Opens in MuseScore." : "MIDI file of what was played, with its own timing.");
+};
+
+addEventListener("keydown", e => {
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  const m = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
+  if (m && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if (m && k === "c") { e.preventDefault(); copySel(); }
+  else if (m && k === "v") { e.preventDefault(); pasteClip(); }
+  else if (m && k === "s") { e.preventDefault(); $("save").click(); }
+  else if (m && k === "o") { e.preventDefault(); $("open").click(); }
+  else if (m) return;
+  else if (k === "w") toggleWrite();
+  else if (k === "n") setView(view === "live" ? "score" : "live");
+  else if (k === "m") $("met").click();
+  else if (e.code === "Space") { e.preventDefault(); $("play").click(); }
+  else if ((e.key === "Backspace" || e.key === "Delete") && view === "score") { e.preventDefault(); deleteSel(); }
+  else if (e.key === "Escape") { sel = null; info(""); }
+  else if (e.key === "Home") { cursor = 0; vt = 0; sel = null; }
+  else if (e.key === "End") { cursor = view === "score" && score() ? barStartSec(score().nBars) : docEnd(); sel = null; vt = Math.max(0, cursor - 3); }
+  else if (e.key === "+" || e.key === "=") zoom(1.3); else if (e.key === "-") zoom(1 / 1.3);
+});
+
+// ================================================================ loop
+let lastNotate = 0;
+function frame(now) {
+  const s = $("held");
+  if (view === "live") drawLive();
+  else { if (W.started && now - lastNotate > 200) { scoreDirty = true; lastNotate = now; layout = null; } drawScore(); }
+  requestAnimationFrame(frame);
+}
+addEventListener("resize", () => { resizeLive(); layout = null; });
+resizeLive(); refresh(); initMidi(); loadPiano();
+vt = Math.max(0, cursor - 3);
+info(doc.notes.length ? `Your last piece is here: ${doc.notes.length} notes. <kbd>W</kbd> writes more at the cursor; <kbd>New</kbd> starts over.` : "Play: what you play shows up as you play it. <kbd>W</kbd> to write it down.");
+requestAnimationFrame(frame);
+</script></body></html>
