@@ -35,6 +35,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   <div class="seg"><button id="vLive" class="on" title="N toggles">Live</button><button id="vScore" title="N toggles">Score</button></div>
   <button id="play" title="Space">Play</button>
   <button id="met" title="M">Click</button>
+  <button id="via" title="Where playback sounds">Sound: laptop</button>
   <div class="grp" id="scoreCtl">
     <select id="key" title="Key"></select>
     <select id="meter" title="Time signature"><option value="2">2/4</option><option value="3">3/4</option><option value="4">4/4</option></select>
@@ -96,8 +97,11 @@ function bindMidi() {
   const ins = [...midiAccess.inputs.values()].filter(i => i.state === "connected");
   for (const i of ins) i.onmidimessage = e => onMidi(e.data, e.timeStamp || performance.now());
   outPort = [...midiAccess.outputs.values()].find(o => o.state === "connected" && /FP-?30|Roland/i.test(o.name)) || null;
-  soundVia = outPort ? "piano" : "laptop";
-  $("midi").innerHTML = ins.length ? "MIDI in: <b>" + ins.map(i => i.name).join(", ") + "</b>" + (outPort ? " · plays back through the piano" : " · plays back on the laptop")
+  // Laptop by default: sending playback to the piano over Bluetooth MIDI is
+  // untested, and on the first try (2026-11-02) the piano stayed silent.
+  if (!outPort) soundVia = "laptop";
+  $("via").disabled = !outPort; $("via").textContent = "Sound: " + soundVia;
+  $("midi").innerHTML = ins.length ? "MIDI in: <b>" + ins.map(i => i.name).join(", ") + "</b>"
     : "No piano. Turn on the FP-30X's Bluetooth (hold Function, press the lowest A), then Audio MIDI Setup → MIDI Studio → Bluetooth → Connect.";
 }
 function onMidi(data, ms) {
@@ -596,6 +600,7 @@ $("vLive").onclick = () => setView("live"); $("vScore").onclick = () => setView(
 $("play").onclick = () => playing ? stop() : play();
 $("met").onclick = () => { metOn = !metOn; refresh(); info(metOn ? (doc.beats ? "Click on. Writing counts in one bar and follows the score's beat." : "Click on. It runs once the piece has bars (press N).") : "Click off."); };
 $("undo").onclick = undo;
+$("via").onclick = () => { if (playing) stop(); soundVia = soundVia === "laptop" && outPort ? "piano" : "laptop"; $("via").textContent = "Sound: " + soundVia; audition(60); info(soundVia === "piano" ? "Playback goes to the piano. You should have just heard middle C from it." : "Playback on the laptop. You should have just heard middle C."); };
 $("new").onclick = () => { if (!doc.notes.length) return; snapshot(); doc = empty(); cursor = 0; vt = 0; sel = null; changed(); setView("live"); info("New piece. <kbd>⌘Z</kbd> brings the last one back."); };
 $("demo").onclick = () => { snapshot(); const d = K.demoDoc(Math.floor(Math.random() * 1000) + 1); delete d.truth; doc = d; cursor = 0; vt = 0; sel = null; changed(); setView("live"); info("A demo take: eight bars played with rubato. Press <kbd>Space</kbd> to hear it, <kbd>N</kbd> to see it as a score."); };
 $("key").onchange = e => { snapshot(); doc.keyOverride = e.target.value || null; changed(); layout = null; };
