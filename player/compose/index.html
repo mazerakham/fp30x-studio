@@ -204,7 +204,7 @@ async function play() {
   audio(); await loadPiano(); await ctx.resume();
   const s = view === "score" ? score() : null;
   let ev, pedal = [], from, startTick = 0;
-  if (s) { const m = cursorBar(); ev = K.scoreEvents(s, m); startTick = m * s.barLen; from = 0; }
+  if (s) { let m = cursorBar(); if (m >= s.nBars) { m = 0; cursor = barStartSec(0); } ev = K.scoreEvents(s, m); startTick = m * s.barLen; from = 0; }
   else {
     from = cursor >= docEnd() - 0.05 ? 0 : cursor; cursor = from;
     const spans = K.pedalSpans(doc.pedal);
