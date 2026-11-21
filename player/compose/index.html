@@ -54,7 +54,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   <kbd>Space</kbd> play from the cursor · <kbd>M</kbd> click track while writing ·
   click to place the cursor ·<br>
   <b>Score, bars</b>: click between notes to select a bar, <kbd>⇧</kbd>-click to extend, <kbd>⌘C</kbd> copy, <kbd>⌘V</kbd> paste before the cursor bar, <kbd>⌫</kbd> delete bars ·<br>
-  <b>Score, notes</b>: click a notehead to select it (it turns orange), <kbd>⇧</kbd>-click adds, <kbd>⌫</kbd> delete, <kbd>↑</kbd><kbd>↓</kbd> a semitone, <kbd>←</kbd><kbd>→</kbd> one subdivision earlier or later ·<br>
+  <b>Score, notes</b>: click a notehead to select it (it turns orange), <kbd>⇧</kbd>-click adds, <kbd>⌫</kbd> delete, <kbd>↑</kbd><kbd>↓</kbd> a semitone, <kbd>←</kbd><kbd>→</kbd> one subdivision earlier or later, <kbd>S</kbd> to the other staff (kept when saved) ·<br>
   <kbd>⌘Z</kbd> undo · <kbd>⇧⌘Z</kbd> redo · <kbd>Home</kbd><kbd>End</kbd> cursor to start or end · <kbd>+</kbd><kbd>−</kbd> zoom Live
 </div>
 <script src="core.js"></script>
@@ -610,7 +610,8 @@ function pruneNoteSel() { const live = new Set(doc.notes.map(n => n.id)); for (c
 function noteInfo(lead) {
   const n = pruneNoteSel();
   if (!n) { info(lead || ""); return; }
-  info(`${lead ? lead + " " : ""}<b>${n} note${n > 1 ? "s" : ""}</b> selected. <kbd>⌫</kbd> delete · <kbd>↑</kbd><kbd>↓</kbd> semitone · <kbd>←</kbd><kbd>→</kbd> move by a subdivision · <kbd>⇧</kbd>-click adds · <kbd>Esc</kbd> clears`);
+  if (lead) lead = lead[0].toUpperCase() + lead.slice(1);
+  info(`${lead ? lead + " " : ""}<b>${n} note${n > 1 ? "s" : ""}</b> selected. <kbd>⌫</kbd> delete · <kbd>↑</kbd><kbd>↓</kbd> semitone · <kbd>←</kbd><kbd>→</kbd> move by a subdivision · <kbd>S</kbd> other staff · <kbd>⇧</kbd>-click adds · <kbd>Esc</kbd> clears`);
 }
 function editNotes(what, arg) {
   if (!pruneNoteSel() || !score()) return;
@@ -618,6 +619,7 @@ function editNotes(what, arg) {
   if (what === "delete") { K.deleteNotes(doc, ids); noteSel = new Set(); }
   else if (what === "pitch") moved = K.transposeNotes(doc, ids, arg);
   else if (what === "time") moved = K.nudgeNotes(doc, ids, arg);
+  else if (what === "staff") moved = K.toggleStaff(doc, ids);
   // An edit that changed nothing (the top of the keyboard, the start of bar 1,
   // onto a note already there) leaves no undo step behind.
   if (!moved) { undoStack.pop(); redoStack = redoKeep; refresh(); noteInfo(what === "pitch" ? "That pitch is already there, or off the keyboard." : "Nowhere to move: the start of bar 1, or a note already there."); return; }
@@ -626,7 +628,9 @@ function editNotes(what, arg) {
   if (what === "pitch") picked.slice(0, 6).forEach(n => audition(n.p, n.v));
   const name = picked.length === 1 ? K.spell(picked[0].p, score().key).name + " " : "";
   noteInfo(what === "delete" ? `Deleted ${ids.length} note${ids.length > 1 ? "s" : ""}. <kbd>⌘Z</kbd> brings ${ids.length > 1 ? "them" : "it"} back.`
-    : what === "pitch" ? `${name}${arg > 0 ? "up" : "down"} a semitone.` : `${name}moved ${arg > 0 ? "later" : "earlier"} by a subdivision.`);
+    : what === "pitch" ? `${name}${arg > 0 ? "up" : "down"} a semitone.`
+    : what === "staff" ? (picked.every(n => n.staff === picked[0].staff) ? `${name}moved to the ${picked[0].staff ? "bass" : "treble"} staff.` : "Each note moved to its other staff.")
+    : `${name}moved ${arg > 0 ? "later" : "earlier"} by a subdivision.`);
 }
 
 // ================================================================ views and controls
@@ -701,6 +705,7 @@ addEventListener("keydown", e => {
   else if (k === "w") toggleWrite();
   else if (k === "n") setView(view === "live" ? "score" : "live");
   else if (k === "m") $("met").click();
+  else if (k === "s" && view === "score" && pruneNoteSel()) editNotes("staff");
   else if (e.code === "Space") { e.preventDefault(); $("play").click(); }
   else if ((e.key === "Backspace" || e.key === "Delete") && view === "score") { e.preventDefault(); pruneNoteSel() ? editNotes("delete") : deleteSel(); }
   else if (e.key.startsWith("Arrow") && view === "score" && pruneNoteSel()) {
