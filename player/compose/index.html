@@ -52,7 +52,9 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   <kbd>W</kbd> Write on/off: recording starts with the first note you play and lands at the cursor ·
   <kbd>N</kbd> Live ↔ Score (the first time, it finds key, tempo and bars) ·
   <kbd>Space</kbd> play from the cursor · <kbd>M</kbd> click track while writing ·
-  click to place the cursor · in Score: click a bar, <kbd>⇧</kbd>-click to extend, <kbd>⌘C</kbd> copy, <kbd>⌘V</kbd> paste before the cursor bar, <kbd>⌫</kbd> delete bars ·
+  click to place the cursor ·<br>
+  <b>Score, bars</b>: click between notes to select a bar, <kbd>⇧</kbd>-click to extend, <kbd>⌘C</kbd> copy, <kbd>⌘V</kbd> paste before the cursor bar, <kbd>⌫</kbd> delete bars ·<br>
+  <b>Score, notes</b>: click a notehead to select it (it turns orange), <kbd>⇧</kbd>-click adds, <kbd>⌫</kbd> delete, <kbd>↑</kbd><kbd>↓</kbd> a semitone, <kbd>←</kbd><kbd>→</kbd> one subdivision earlier or later ·<br>
   <kbd>⌘Z</kbd> undo · <kbd>⇧⌘Z</kbd> redo · <kbd>Home</kbd><kbd>End</kbd> cursor to start or end · <kbd>+</kbd><kbd>−</kbd> zoom Live
 </div>
 <script src="core.js"></script>
@@ -73,6 +75,11 @@ const empty = () => ({ format: "compose", version: 1, notes: [], pedal: [], beat
 let doc = empty();
 try { const s = localStorage.getItem(STORE); if (s) doc = JSON.parse(s); } catch (e) {}
 let undoStack = [], redoStack = [], cursor = 0, view = "live", sc = null, scoreDirty = true, sel = null, clip = null;
+// Two kinds of selection, never both: `sel` is a range of bars [m1, m2] (a click
+// between noteheads), `noteSel` a set of note ids (a click on a notehead). The
+// keys act on whichever is set, and setting one clears the other.
+let noteSel = new Set();
+K.ensureIds(doc);
 function snapshot() { undoStack.push(JSON.stringify(doc)); if (undoStack.length > 200) undoStack.shift(); redoStack = []; refresh(); }
 function changed() { scoreDirty = true; try { localStorage.setItem(STORE, JSON.stringify(doc)); } catch (e) {} refresh(); }
 function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(doc)); doc = JSON.parse(undoStack.pop()); clampCursor(); changed(); info("Undone."); }
@@ -468,7 +475,9 @@ function drawStaffBar(g, C, b, sy, st) {
       g.strokeStyle = C.staff; g.lineWidth = 1;
       const led = []; if (st === 0) { for (let k = 40; k <= n.step; k += 2) led.push(k); for (let k = 28; k >= n.step; k -= 2) led.push(k); } else { for (let k = 16; k >= n.step; k -= 2) led.push(k); for (let k = 28; k <= n.step; k += 2) led.push(k); }
       for (const k of led) { const yy = Math.round(Y(k)) + .5; g.beginPath(); g.moveTo(hx - rx * 1.7, yy); g.lineTo(hx + rx * 1.7, yy); g.stroke(); }
-      g.fillStyle = C.head; g.strokeStyle = C.head;
+      const picked = noteSel.has(n.id);
+      if (picked) { g.fillStyle = C.sel; g.globalAlpha = .22; g.beginPath(); g.arc(hx, hy, rx + 4.5, 0, 7); g.fill(); g.globalAlpha = 1; }
+      g.fillStyle = picked ? C.sel : C.head; g.strokeStyle = picked ? C.sel : C.head;
       g.beginPath(); g.ellipse(hx, hy, rx, ry, -.35, 0, 7);
       if (hollow) { g.lineWidth = 1.6; g.stroke(); } else g.fill();
       if (n.acc != null) {
@@ -476,7 +485,7 @@ function drawStaffBar(g, C, b, sy, st) {
         accidental(g, n.acc, x - rx - 7 - accCol * 9, hy, C.head); lastAccStep = n.step;
       }
       for (let d = 0; d < e.dots; d++) { const dy = (n.step % 2 === (st === 0 ? 0 : 0)) ? -HS * .9 : 0; g.beginPath(); g.arc(x + rx + 5 + d * 5 + (shift && up ? 2 * rx : 0), hy + (onLine(n.step, st) ? -HS : 0), 1.6, 0, 7); g.fill(); }
-      heads.push({ x: hx, y: hy, n, e, bar: b.bar.index, up });
+      heads.push({ x: hx, y: hy, n, e, bar: b.bar.index, up, st });
       prev = n.step; prevShift = shift;
     }
     if (e.base !== "w") {
@@ -538,7 +547,7 @@ function drawRest(g, C, x, Y, mid, e) {
 }
 function drawTies(g, C, bars, systems) {
   const byStaff = [[], []];
-  for (const h of heads) byStaff[h.y > yT(systems[bars[h.bar].sys], 20) ? 1 : 0].push(h);
+  for (const h of heads) byStaff[h.st].push(h);
   for (const hs of byStaff) {
     for (const h of hs) {
       if (!h.n.tieNext) continue;
@@ -555,8 +564,20 @@ cvS.addEventListener("pointerdown", e => {
   const s = score(); if (!s || !layout || W.started) return;
   if (playing) stop();
   const r = sbox.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; // score coordinates: the box scrolls, the canvas sticks
-  // a notehead: say what it is and sound it
-  const h = heads.find(h => Math.abs(h.x - x) < 7 && Math.abs(h.y - y) < 6);
+  // a notehead: select it (⇧ adds or removes), say what it is and sound it
+  let h = null, hd = Infinity;
+  for (const c of heads) { const dx = c.x - x, dy = c.y - y; if (Math.abs(dx) < 7 && Math.abs(dy) < 6 && dx * dx + dy * dy < hd) { hd = dx * dx + dy * dy; h = c; } }
+  if (h) {
+    sel = null;
+    if (e.shiftKey) { if (noteSel.has(h.n.id)) noteSel.delete(h.n.id); else noteSel.add(h.n.id); }
+    else noteSel = new Set([h.n.id]);
+    cursor = barStartSec(h.bar);
+    if (noteSel.has(h.n.id)) audition(h.n.p, h.n.v);
+    const names = { w: "whole note", h: "half note", q: "quarter note", e: "eighth note", s: "sixteenth note", t: "thirty-second note" };
+    noteInfo(noteSel.size === 1 && noteSel.has(h.n.id) ? `<b>${h.n.name}</b>, a ${h.e.dots ? "dotted " : ""}${h.e.tri ? "triplet " : ""}${names[h.e.base]}${h.n.tieNext || h.n.tied ? ", tied" : ""}, in bar ${h.bar + 1}.` : "");
+    return;
+  }
+  noteSel = new Set();
   const si = Math.floor((y - TOP) / SYS_H), sy = layout.systems[si];
   let m = null;
   if (sy) { const b = sy.bars.find(b => x >= b.x && x < b.x + b.w); m = b ? b.bar.index : (x >= sy.x1 ? (si === layout.systems.length - 1 ? s.nBars : sy.bars[sy.bars.length - 1].bar.index + 1) : sy.bars[0].bar.index); }
@@ -565,11 +586,7 @@ cvS.addEventListener("pointerdown", e => {
   if (e.shiftKey && sel) sel = [Math.min(sel[0], m), Math.max(sel[1], m)];
   else sel = [m, m];
   cursor = barStartSec(sel[0]);
-  if (h && !e.shiftKey) {
-    audition(h.n.p, h.n.v);
-    const names = { w: "whole note", h: "half note", q: "quarter note", e: "eighth note", s: "sixteenth note", t: "thirty-second note" };
-    info(`<b>${h.n.name}</b>, a ${h.e.dots ? "dotted " : ""}${h.e.tri ? "triplet " : ""}${names[h.e.base]}${h.n.tieNext || h.n.tied ? ", tied" : ""}, in bar ${m + 1}. ${clip ? "" : "<kbd>⌘C</kbd> copies this bar."}`);
-  } else info(sel[0] === sel[1] ? `Bar ${m + 1}. <kbd>⌘C</kbd> copy · <kbd>⌘V</kbd> paste before it · <kbd>⌫</kbd> delete · <kbd>W</kbd> write from here` : `Bars ${sel[0] + 1}–${sel[1] + 1}. <kbd>⌘C</kbd> copy · <kbd>⌫</kbd> delete`);
+  info(sel[0] === sel[1] ? `<b>Bar ${m + 1}</b> selected. <kbd>⌘C</kbd> copy · <kbd>⌘V</kbd> paste before it · <kbd>⌫</kbd> delete the bar · <kbd>W</kbd> write from here` : `<b>Bars ${sel[0] + 1}–${sel[1] + 1}</b> selected. <kbd>⌘C</kbd> copy · <kbd>⌫</kbd> delete the bars`);
 });
 
 // ================================================================ bar edits
@@ -585,6 +602,27 @@ function pasteClip() {
 function deleteSel() {
   if (!sel || !score()) return; snapshot(); const [a, b] = sel; K.deleteBars(doc, a, b); changed();
   sel = null; cursor = barStartSec(a); info(`Deleted bar${a === b ? " " + (a + 1) : "s " + (a + 1) + "–" + (b + 1)}. <kbd>⌘Z</kbd> brings ${a === b ? "it" : "them"} back.`);
+}
+
+// ================================================================ note edits
+function noteInfo(lead) {
+  const live = new Set(doc.notes.map(n => n.id)); for (const id of noteSel) if (!live.has(id)) noteSel.delete(id);
+  const n = noteSel.size;
+  if (!n) { info(lead || ""); return; }
+  info(`${lead ? lead + " " : ""}<b>${n} note${n > 1 ? "s" : ""}</b> selected. <kbd>⌫</kbd> delete · <kbd>↑</kbd><kbd>↓</kbd> semitone · <kbd>←</kbd><kbd>→</kbd> move by a subdivision · <kbd>⇧</kbd>-click adds · <kbd>Esc</kbd> clears`);
+}
+function editNotes(what, arg) {
+  if (!noteSel.size || !score()) return;
+  const ids = [...noteSel]; snapshot();
+  if (what === "delete") { K.deleteNotes(doc, ids); noteSel = new Set(); }
+  else if (what === "pitch") K.transposeNotes(doc, ids, arg);
+  else if (what === "time") K.nudgeNotes(doc, ids, arg);
+  changed();
+  const picked = doc.notes.filter(n => noteSel.has(n.id));
+  if (what === "pitch") picked.slice(0, 6).forEach(n => audition(n.p, n.v));
+  const name = picked.length === 1 ? K.spell(picked[0].p, score().key).name + " " : "";
+  noteInfo(what === "delete" ? `Deleted ${ids.length} note${ids.length > 1 ? "s" : ""}. <kbd>⌘Z</kbd> brings ${ids.length > 1 ? "them" : "it"} back.`
+    : what === "pitch" ? `${name}${arg > 0 ? "up" : "down"} a semitone.` : `${name}moved ${arg > 0 ? "later" : "earlier"} by a subdivision.`);
 }
 
 // ================================================================ views and controls
@@ -618,8 +656,8 @@ $("play").onclick = () => playing ? stop() : play();
 $("met").onclick = () => { metOn = !metOn; refresh(); info(metOn ? (doc.beats ? "Click on. Writing counts in one bar and follows the score's beat." : "Click on. It runs once the piece has bars (press N).") : "Click off."); };
 $("undo").onclick = undo;
 $("via").onclick = () => { if (playing) stop(); soundVia = soundVia === "laptop" && outPort ? "piano" : "laptop"; $("via").textContent = "Sound: " + soundVia; audition(60); info(soundVia === "piano" ? "Playback goes to the piano. You should have just heard middle C from it." : "Playback on the laptop. You should have just heard middle C."); };
-$("new").onclick = () => { if (!doc.notes.length) return; snapshot(); doc = empty(); cursor = 0; vt = 0; sel = null; changed(); setView("live"); info("New piece. <kbd>⌘Z</kbd> brings the last one back."); };
-$("demo").onclick = () => { snapshot(); const d = K.demoDoc(Math.floor(Math.random() * 1000) + 1); delete d.truth; doc = d; cursor = 0; vt = 0; sel = null; changed(); setView("live"); info("A demo take: eight bars played with rubato. Press <kbd>Space</kbd> to hear it, <kbd>N</kbd> to see it as a score."); };
+$("new").onclick = () => { if (!doc.notes.length) return; snapshot(); doc = empty(); cursor = 0; vt = 0; sel = null; noteSel = new Set(); changed(); setView("live"); info("New piece. <kbd>⌘Z</kbd> brings the last one back."); };
+$("demo").onclick = () => { snapshot(); const d = K.demoDoc(Math.floor(Math.random() * 1000) + 1); delete d.truth; doc = d; cursor = 0; vt = 0; sel = null; noteSel = new Set(); changed(); setView("live"); info("A demo take: eight bars played with rubato. Press <kbd>Space</kbd> to hear it, <kbd>N</kbd> to see it as a score."); };
 // Read the choice before snapshot(): it refreshes the controls from the document.
 $("key").onchange = e => { const v = e.target.value || null; snapshot(); doc.keyOverride = v; changed(); layout = null; };
 $("meter").onchange = e => {
@@ -638,7 +676,7 @@ $("save").onclick = async () => {
   if (window.showSaveFilePicker) { try { const h = await showSaveFilePicker({ suggestedName: name, id: "compose", types: [{ description: "Compose piece", accept: { "application/json": [".json"] } }] }); const w = await h.createWritable(); await w.write(text); await w.close(); info(`Saved ${h.name}.`); } catch (e) { if (e.name !== "AbortError") info("Save failed: " + e.message); } }
   else download(new Blob([text], { type: "application/json" }), name);
 };
-$("open").onclick = () => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = async () => { try { const d = JSON.parse(await i.files[0].text()); if (d.format !== "compose") throw Error("not a Compose file"); snapshot(); doc = d; cursor = 0; vt = 0; sel = null; changed(); setView(doc.beats ? "score" : "live"); info(`Opened ${i.files[0].name}.`); } catch (e) { info("Could not open: " + e.message); } }; i.click(); };
+$("open").onclick = () => { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = async () => { try { const d = JSON.parse(await i.files[0].text()); if (d.format !== "compose") throw Error("not a Compose file"); snapshot(); K.ensureIds(d); doc = d; cursor = 0; vt = 0; sel = null; noteSel = new Set(); changed(); setView(doc.beats ? "score" : "live"); info(`Opened ${i.files[0].name}.`); } catch (e) { info("Could not open: " + e.message); } }; i.click(); };
 $("mid").onclick = () => {
   const s = doc.beats ? score() : null;
   if (s) download(new Blob([K.smf(K.scoreEvents(s, 0), s.bpm, s.meter, s.unit)], { type: "audio/midi" }), `compose-${stamp()}-score.mid`);
@@ -660,9 +698,13 @@ addEventListener("keydown", e => {
   else if (k === "n") setView(view === "live" ? "score" : "live");
   else if (k === "m") $("met").click();
   else if (e.code === "Space") { e.preventDefault(); $("play").click(); }
-  else if ((e.key === "Backspace" || e.key === "Delete") && view === "score") { e.preventDefault(); deleteSel(); }
-  else if (e.key === "Escape") { sel = null; info(""); }
-  else if (e.key === "Home") { cursor = 0; vt = 0; sel = null; }
+  else if ((e.key === "Backspace" || e.key === "Delete") && view === "score") { e.preventDefault(); noteSel.size ? editNotes("delete") : deleteSel(); }
+  else if (e.key.startsWith("Arrow") && view === "score" && noteSel.size) {
+    e.preventDefault(); const up = e.key === "ArrowUp", right = e.key === "ArrowRight";
+    if (up || e.key === "ArrowDown") editNotes("pitch", up ? 1 : -1); else editNotes("time", right ? 1 : -1);
+  }
+  else if (e.key === "Escape") { sel = null; noteSel = new Set(); info(""); }
+  else if (e.key === "Home") { cursor = 0; vt = 0; sel = null; noteSel = new Set(); }
   else if (e.key === "End") { cursor = view === "score" && score() ? barStartSec(score().nBars) : docEnd(); sel = null; vt = Math.max(0, cursor - 3); }
   else if (e.key === "+" || e.key === "=") zoom(1.3); else if (e.key === "-") zoom(1 / 1.3);
 });
@@ -695,7 +737,7 @@ if (openFrom) {
   else fetch(openFrom, { cache: "no-store" }).then(r => { if (!r.ok) throw Error(r.status); return r.json(); }).then(d => {
     if (d.format !== "compose") throw Error("not a Compose file");
     if (doc.notes.length) { snapshot(); try { localStorage.setItem(STORE + ":before-open", JSON.stringify(doc)); } catch (e) {} }
-    doc = Object.assign(d, { source: openFrom }); cursor = 0; vt = 0; sel = null; changed(); setView(doc.beats ? "score" : "live");
+    doc = Object.assign(d, { source: openFrom }); K.ensureIds(doc); cursor = 0; vt = 0; sel = null; noteSel = new Set(); changed(); setView(doc.beats ? "score" : "live");
     info(`Opened <b>${name}</b>: ${doc.notes.length} notes.` + (undoStack.length ? " <kbd>⌘Z</kbd> brings back the piece that was open." : ""));
   }).catch(e => info(`Could not open ${name}: ${e.message}`));
 }

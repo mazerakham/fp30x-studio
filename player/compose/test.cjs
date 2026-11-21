@@ -189,6 +189,44 @@ t("MIDI file in 6/8 carries 6/8 and the quarter tempo", () => {
   assert.deepStrictEqual([...b.slice(i + 2, i + 5)], [6, 3, 36]);
 });
 
+// ------------------------------------------------------------------ note edits
+const ticksOf = s => { const m = new Map(); for (const bar of s.bars) for (const st of [0, 1]) for (const e of bar.staves[st]) if (!e.rest) for (const n of e.notes) if (!n.tied) m.set(n.id, [e.tick, n.p]); return m; };
+const barSigs = s => s.bars.map(b => b.staves.map(st => st.map(e => (e.rest ? "r" : e.notes.map(n => n.p).join(",")) + ":" + (e.tick - b.start) + "/" + e.len).join(" ")).join(" | "));
+t("delete one note: it is gone, every other onset stays on its tick", () => {
+  const d = JSON.parse(JSON.stringify(doc)), before = ticksOf(C.notate(d));
+  C.deleteNotes(d, ["d6"]); const after = ticksOf(C.notate(d));
+  assert.ok(!after.has("d6")); assert.strictEqual(after.size, before.size - 1);
+  for (const [id, v] of after) assert.deepStrictEqual(v, before.get(id), id);
+});
+t("transpose a note up a semitone: same tick, new pitch, nothing else moves", () => {
+  const d = JSON.parse(JSON.stringify(doc)), before = ticksOf(C.notate(d));
+  C.transposeNotes(d, ["d0"], 1); const after = ticksOf(C.notate(d));
+  assert.deepStrictEqual(after.get("d0"), [0, 70]);
+  for (const [id, v] of after) if (id !== "d0") assert.deepStrictEqual(v, before.get(id), id);
+  C.transposeNotes(d, ["d0"], -2); assert.strictEqual(ticksOf(C.notate(d)).get("d0")[1], 68);
+});
+t("nudge moves an onset one subdivision of its beat, and back", () => {
+  // bar 5 opens with a triplet: d15 d16 d17 at ticks 192, 196, 200 (beat of three)
+  const d = JSON.parse(JSON.stringify(doc)), before = ticksOf(C.notate(d));
+  const len = n => C.secToBeat(n.t + n.d, d.beats) - C.secToBeat(n.t, d.beats), d17 = () => d.notes.find(n => n.id === "d17"), l0 = len(d17());
+  C.nudgeNotes(d, ["d16"], -1); assert.strictEqual(ticksOf(C.notate(d)).get("d16")[0], 192);
+  C.nudgeNotes(d, ["d16"], 1); assert.strictEqual(ticksOf(C.notate(d)).get("d16")[0], 196);
+  C.nudgeNotes(d, ["d17"], 1); assert.strictEqual(ticksOf(C.notate(d)).get("d17")[0], 204); // onto the next beat line
+  assert.ok(Math.abs(len(d17()) - l0) < 1e-9, "length in beats kept");
+  C.nudgeNotes(d, ["d17"], -1); // off a beat line: the previous beat's grid (thirds)
+  const after = ticksOf(C.notate(d));
+  for (const [id, v] of after) assert.deepStrictEqual(v, before.get(id), id);
+});
+t("nudge in a beat with no subdivision moves a whole beat", () => {
+  const d = JSON.parse(JSON.stringify(doc));
+  C.nudgeNotes(d, ["d4"], 1); // D5 at tick 36, a quarter alone on its beat
+  assert.strictEqual(ticksOf(C.notate(d)).get("d4")[0], 48);
+});
+t("ensureIds gives every note a distinct id", () => {
+  const d = { notes: [{ t: 0, d: 1, p: 60, v: 60 }, { id: "a", t: 1, d: 1, p: 62, v: 60 }, { id: "a", t: 2, d: 1, p: 64, v: 60 }] };
+  C.ensureIds(d); assert.strictEqual(new Set(d.notes.map(n => n.id)).size, 3); assert.strictEqual(d.notes[1].id, "a");
+});
+
 // Robustness: other seeds of the same phrase.
 let exact = 0;
 for (let seed = 1; seed <= 60; seed++) {
