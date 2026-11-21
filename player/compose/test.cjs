@@ -314,6 +314,60 @@ t("re-record in 6/8 lands on the bar's eighths", () => {
   assert.strictEqual(g1[2].split(" | ")[0], "60:0/36 62:36/12 64:48/12 65:60/12");
   assert.deepStrictEqual(g1.slice(3), g0.slice(3)); assert.deepStrictEqual(g1.slice(0, 2), g0.slice(0, 2));
 });
+// ------------------------------------------------------------------ export
+const measures = xml => xml.split("<measure ").slice(1).map(m => m.split("</measure>")[0]);
+function staffDurations(m) { // per staff: sum of durations of notes that are not chord members
+  const sums = [0, 0]; let st = 0;
+  for (const chunk of m.split(/(?=<note>|<backup>)/)) {
+    if (chunk.startsWith("<backup>")) continue;
+    if (!chunk.startsWith("<note>") || chunk.includes("<chord/>")) continue;
+    st = +chunk.match(/<staff>(\d)<\/staff>/)[1] - 1; sums[st] += +chunk.match(/<duration>(\d+)<\/duration>/)[1];
+  }
+  return sums;
+}
+t("MusicXML: one measure per bar, both staves fill every bar, ties and triplets balanced", () => {
+  for (const [d, label] of [[doc, "4/4 demo"], [(() => { const x = perform(SIX8, 0.34, 3); Object.assign(x, C.detect(x)); return x; })(), "6/8"]]) {
+    const s = C.notate(d), xml = C.toMusicXML(s, { title: "T & <test>" }), ms = measures(xml);
+    assert.strictEqual(ms.length, s.nBars, label);
+    ms.forEach((m, i) => assert.deepStrictEqual(staffDurations(m), [s.barLen, s.barLen], `${label} bar ${i + 1}`));
+    const count = re => (xml.match(re) || []).length;
+    assert.strictEqual(count(/<tie type="start"\/>/g), count(/<tie type="stop"\/>/g), label);
+    assert.strictEqual(count(/<tuplet type="start"/g), count(/<tuplet type="stop"/g), label);
+    assert.ok(xml.includes("<work-title>T &amp; &lt;test&gt;</work-title>"));
+    assert.ok(xml.includes(`<beats>${s.meter}</beats><beat-type>${s.unit}</beat-type>`));
+  }
+  assert.ok(C.toMusicXML(sc).includes("<divisions>12</divisions><key><fifths>2</fifths><mode>major</mode>"));
+});
+t("MusicXML carries an edit: A4 raised to B♭4 in bar 1, a note moved to the bass", () => {
+  const d = JSON.parse(JSON.stringify(doc)); C.transposeNotes(d, ["d0"], 1); C.toggleStaff(d, ["d1"]);
+  const m1 = measures(C.toMusicXML(C.notate(d)))[0], notes = m1.split("<note>").slice(1);
+  const first = notes.find(n => n.includes("<staff>1</staff>"));
+  assert.ok(/<step>B<\/step><alter>-1<\/alter><octave>4<\/octave>/.test(first) || /<step>A<\/step><alter>1<\/alter><octave>4<\/octave>/.test(first), first);
+  assert.ok(notes.some(n => n.includes("<step>F</step><alter>1</alter><octave>4</octave>") && n.includes("<staff>2</staff>")));
+});
+t("hall impulse response: pre-delay, peak 1, decays ~60 dB over rt60, same seed same response", () => {
+  const sr = 8000, ir = C.hallIR(sr, 2.1, 1000), pre = Math.floor(sr * 0.025);
+  assert.strictEqual(ir.length, Math.floor(sr * (2.1 * 1.15 + 0.125)));
+  for (let i = 0; i < pre; i++) assert.strictEqual(ir[i], 0);
+  assert.ok(Math.abs(Math.max(...ir.map(Math.abs)) - 1) < 1e-6);
+  const rms = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += ir[i] * ir[i]; return Math.sqrt(s / (b - a)); };
+  const w = sr / 10, db = 20 * Math.log10(rms(pre + sr * 2.1 - w / 2, pre + sr * 2.1 + w / 2) / rms(pre + sr * 0.1, pre + sr * 0.1 + w));
+  assert.ok(db < -45 && db > -75, "decay over rt60 " + db.toFixed(1) + " dB");
+  assert.deepStrictEqual(C.hallIR(sr, 2.1, 1000).slice(0, 2000), ir.slice(0, 2000));
+  assert.notDeepStrictEqual(C.hallIR(sr, 2.1, 1001).slice(pre, pre + 2000), ir.slice(pre, pre + 2000));
+});
+t("hall mix peaks at the ceiling, WAV header is 16-bit PCM", () => {
+  const dry = [new Float32Array(100).fill(0.1), new Float32Array(100).fill(-0.2)], hall = [new Float32Array(150).fill(0.5), new Float32Array(150).fill(0.5)];
+  const out = C.hallMix(dry, hall); let pk = 0; for (const o of out) for (const x of o) pk = Math.max(pk, Math.abs(x));
+  assert.ok(Math.abs(pk - Math.pow(10, -1 / 20)) < 1e-6); assert.strictEqual(out[0].length, 150);
+  const w = C.wav16(out, 44100); assert.strictEqual(String.fromCharCode(...w.slice(0, 4)), "RIFF");
+  assert.strictEqual(new DataView(w.buffer).getUint16(34, true), 16); assert.strictEqual(w.length, 44 + 150 * 4);
+});
+t("audio events: every note as played (pedal holds), or the score at its tempo", () => {
+  const ev = C.audioEvents(doc, sc, "played"); assert.strictEqual(ev.length, doc.notes.filter(n => !C.isGhost(n)).length);
+  assert.strictEqual(ev[0].t, 0); assert.ok(ev.every(e => e.end > e.t));
+  assert.strictEqual(C.audioEvents(doc, sc, "written").length, C.scoreEvents(sc, 0).length);
+});
 t("ensureIds gives every note a distinct id", () => {
   const d = { notes: [{ t: 0, d: 1, p: 60, v: 60 }, { id: "a", t: 1, d: 1, p: 62, v: 60 }, { id: "a", t: 2, d: 1, p: 64, v: 60 }] };
   C.ensureIds(d); assert.strictEqual(new Set(d.notes.map(n => n.id)).size, 3); assert.strictEqual(d.notes[1].id, "a");

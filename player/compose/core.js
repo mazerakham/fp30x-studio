@@ -755,6 +755,173 @@ function smf(events, bpm, meter, unit = 4) {
     0x4d, 0x54, 0x72, 0x6b, ...u32(bytes.length), ...bytes]);
 }
 
+// ------------------------------------------------------------------ MusicXML
+// The score exactly as notate() derived it: one part, two staves, every event
+// with its value, dots, triplet, tie and the accidental the page draws. A bar
+// is 12 ticks a beat, so with the quarter as the beat (x/4) a division is a
+// tick at 12 per quarter, and with the eighth (x/8) 24 per quarter.
+const XML_TYPE = { w: "whole", h: "half", q: "quarter", e: "eighth", s: "16th", t: "32nd" };
+const BEAM_LEVELS = { e: 1, s: 2, t: 3 };
+const xmlEsc = x => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// Beam groups, as the page draws them: two or more eighths or shorter inside
+// one beat, or inside one dotted quarter in x/8 time.
+function beamGroups(bar, evs) {
+  const span = bar.unit === 8 && bar.len % 36 === 0 ? 36 : TPB, groups = []; let cur = [];
+  const flush = () => { if (cur.length > 1) groups.push(cur); cur = []; };
+  for (const e of evs) {
+    const ok = !e.rest && BEAM_LEVELS[e.base] > 0;
+    if (ok && cur.length && Math.floor(cur[0].tick / span) === Math.floor(e.tick / span) && cur[0].tri === e.tri) cur.push(e);
+    else { flush(); if (ok) cur.push(e); }
+  }
+  flush(); return groups;
+}
+function toMusicXML(sc, opt = {}) {
+  const title = opt.title || "Compose", div = sc.unit === 8 ? 24 : 12, out = [];
+  const qbpm = sc.unit === 8 ? sc.bpm / 2 : sc.bpm, compound = sc.unit === 8 && sc.meter % 3 === 0;
+  out.push('<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
+    '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">',
+    '<score-partwise version="4.0">', `<work><work-title>${xmlEsc(title)}</work-title></work>`,
+    '<identification><encoding><software>Compose (fp30x-studio)</software></encoding></identification>',
+    '<part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>', '<part id="P1">');
+  sc.bars.forEach((bar, m) => {
+    out.push(`<measure number="${m + 1}">`);
+    if (m === 0) {
+      out.push(`<attributes><divisions>${div}</divisions><key><fifths>${sc.key.fifths}</fifths><mode>${sc.key.minor ? "minor" : "major"}</mode></key>`,
+        `<time><beats>${sc.meter}</beats><beat-type>${sc.unit}</beat-type></time><staves>2</staves>`,
+        '<clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>');
+      const per = Math.round(compound ? sc.bpm / 3 : sc.bpm);
+      out.push(`<direction placement="above"><direction-type><metronome><beat-unit>${sc.unit === 8 ? (compound ? "quarter" : "eighth") : "quarter"}</beat-unit>${compound ? "<beat-unit-dot/>" : ""}<per-minute>${per}</per-minute></metronome></direction-type><staff>1</staff><sound tempo="${+qbpm.toFixed(2)}"/></direction>`);
+    }
+    for (const s of [0, 1]) {
+      if (s === 1) out.push(`<backup><duration>${bar.len}</duration></backup>`);
+      const evs = bar.staves[s], voice = s === 0 ? 1 : 5, staff = s + 1;
+      const beam = new Map();
+      for (const g of beamGroups(bar, evs)) g.forEach((e, i) => {
+        const tags = [];
+        for (let lv = 1; lv <= 3; lv++) {
+          const has = x => x && BEAM_LEVELS[x.base] >= lv; if (!has(e)) continue;
+          const pv = has(g[i - 1]), nx = has(g[i + 1]);
+          const v = lv === 1 ? (i === 0 ? "begin" : i === g.length - 1 ? "end" : "continue")
+            : pv && nx ? "continue" : pv ? "end" : nx ? "begin" : (g[i + 1] ? "forward hook" : "backward hook");
+          tags.push(`<beam number="${lv}">${v}</beam>`);
+        }
+        beam.set(e, tags.join(""));
+      });
+      // triplets: the first and last triplet event of each beat open and close the bracket
+      const tup = new Map();
+      for (let i = 0; i < evs.length; i++) {
+        const e = evs[i]; if (!e.tri) continue;
+        const bi = Math.floor(e.tick / TPB), prev = evs[i - 1], next = evs[i + 1];
+        const first = !(prev && prev.tri && Math.floor(prev.tick / TPB) === bi), last = !(next && next.tri && Math.floor(next.tick / TPB) === bi);
+        tup.set(e, (first ? '<tuplet type="start" bracket="yes"/>' : "") + (last ? '<tuplet type="stop"/>' : ""));
+      }
+      for (const e of evs) {
+        const tm = e.tri ? "<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>" : "";
+        const dots = "<dot/>".repeat(e.dots);
+        if (e.rest) {
+          out.push(e.wholeBar ? `<note><rest measure="yes"/><duration>${e.len}</duration><voice>${voice}</voice><staff>${staff}</staff></note>`
+            : `<note><rest/><duration>${e.len}</duration><voice>${voice}</voice><type>${XML_TYPE[e.base]}</type>${dots}${tm}<staff>${staff}</staff>${tup.get(e) ? `<notations>${tup.get(e)}</notations>` : ""}</note>`);
+          continue;
+        }
+        e.notes.forEach((n, j) => {
+          const alter = n.a ? `<alter>${n.a}</alter>` : "";
+          const acc = n.acc != null ? `<accidental>${n.acc > 0 ? "sharp" : n.acc < 0 ? "flat" : "natural"}</accidental>` : "";
+          const ties = (n.tied ? '<tie type="stop"/>' : "") + (n.tieNext ? '<tie type="start"/>' : "");
+          const tied = (n.tied ? '<tied type="stop"/>' : "") + (n.tieNext ? '<tied type="start"/>' : "");
+          const nots = tied + (j === 0 ? tup.get(e) || "" : "");
+          out.push(`<note>${j ? "<chord/>" : ""}<pitch><step>${LETTERS[n.L]}</step>${alter}<octave>${n.oct}</octave></pitch><duration>${e.len}</duration>${ties}<voice>${voice}</voice><type>${XML_TYPE[e.base]}</type>${dots}${acc}${tm}<staff>${staff}</staff>${j === 0 ? beam.get(e) || "" : ""}${nots ? `<notations>${nots}</notations>` : ""}</note>`);
+        });
+      }
+    }
+    if (m === sc.bars.length - 1) out.push('<barline location="right"><bar-style>light-heavy</bar-style></barline>');
+    out.push("</measure>");
+  });
+  out.push("</part>", "</score-partwise>");
+  return out.join("\n");
+}
+
+// ------------------------------------------------------------------ audio export
+// What the audio export plays. "played": the document, in its own time, each
+// note held as long as the key or the pedal held it. "written": the score at
+// its one steady tempo, as Play does in Score view.
+function audioEvents(doc, sc, mode) {
+  if (mode === "written") return scoreEvents(sc, 0).map(e => ({ t: e.t, end: e.t + e.d, p: e.p, v: e.v }));
+  const spans = pedalSpans(doc.pedal), t0 = doc.notes.reduce((m, n) => Math.min(m, n.t), Infinity);
+  return doc.notes.filter(n => !isGhost(n)).map(n => {
+    const r = releaseWithPedal(n.t + n.d, spans);
+    return { t: n.t - t0, end: (Number.isFinite(r) ? r : n.t + n.d + 4) - t0, p: n.p, v: n.v };
+  }).sort((a, b) => a.t - b.t);
+}
+// One channel of synthetic hall, ported from fp30x_studio/reverb.py
+// (impulse_response): three bands of decaying noise (lows ring longest),
+// 25 ms pre-delay, six early reflections, the diffuse onset faded in over
+// 80 ms, normalised to peak 1. The seed decorrelates the two sides.
+const HALL = { bands: [[0, 500, 1.30], [500, 3000, 1.00], [3000, 20000, 0.45]], predelay: 0.025,
+  early: [[0.011, 0.62], [0.019, -0.48], [0.031, 0.41], [0.043, -0.34], [0.057, 0.28], [0.071, -0.22]] };
+function fft(re, im, inv) { // in place, length a power of two
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) { let b = n >> 1; for (; j & b; b >>= 1) j ^= b; j ^= b; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const a = (inv ? 2 : -2) * Math.PI / len, wr = Math.cos(a), wi = Math.sin(a);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k], ui = im[i + k], j = i + k + len / 2;
+        const vr = re[j] * cr - im[j] * ci, vi = re[j] * ci + im[j] * cr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi; re[j] = ur - vr; im[j] = ui - vi;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      }
+    }
+  }
+  if (inv) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+}
+function hallIR(sr, rt60 = 2.1, seed = 1000) {
+  const n = Math.floor(sr * (rt60 * 1.15 + HALL.predelay + 0.1));
+  let N = 1; while (N < n) N <<= 1;
+  let s = seed >>> 0; const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const re = new Float64Array(N), im = new Float64Array(N);
+  for (let i = 0; i < N; i++) re[i] = Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(2 * Math.PI * rnd());
+  fft(re, im, false);
+  const tail = new Float64Array(n);
+  for (const [lo, hi, mult] of HALL.bands) {
+    const br = new Float64Array(N), bi = new Float64Array(N);
+    for (let k = 0; k < N; k++) { const f = Math.min(k, N - k) * sr / N; if (f >= lo && f < hi) { br[k] = re[k]; bi[k] = im[k]; } }
+    fft(br, bi, true);
+    for (let i = 0; i < n; i++) tail[i] += br[i] * Math.pow(10, -3 * (i / sr) / (rt60 * mult));
+  }
+  const ir = new Float32Array(n), pre = Math.floor(sr * HALL.predelay);
+  for (let i = pre; i < n; i++) ir[i] = tail[i - pre];
+  for (const [dt, g] of HALL.early) { const i = pre + Math.floor(sr * dt); if (i < n) ir[i] += g; }
+  const ramp = Math.floor(sr * 0.08);
+  for (let i = 0; i < ramp && pre + i < n; i++) ir[pre + i] *= 0.15 + 0.85 * i / (ramp - 1);
+  let mx = 0; for (const x of ir) mx = Math.max(mx, Math.abs(x)); for (let i = 0; i < n; i++) ir[i] /= mx;
+  return ir;
+}
+// The mix reverb.py makes: the wet signal scaled to the dry one's RMS, then
+// (1 - wet)·dry + wet·hall, the whole peak-normalised to `ceiling` dBFS.
+// dry and hall are [left, right] Float32Arrays (hall at least as long). The
+// mix is written into `hall` and returned: a nine-minute take is ~100 MB a
+// channel set, so no third copy is made.
+function hallMix(dry, hall, wet = 0.28, ceiling = -1) {
+  const rms = chs => { let s = 0, n = 0; for (const c of chs) { for (let i = 0; i < c.length; i++) s += c[i] * c[i]; n += c.length; } return Math.sqrt(s / n); };
+  const dr = rms(dry), wr = rms(hall), k = wr > 0 ? dr / wr : 0, L = hall[0].length;
+  const out = hall.map((o, c) => { for (let i = 0; i < L; i++) o[i] = wet * k * o[i] + (i < dry[c].length ? (1 - wet) * dry[c][i] : 0); return o; });
+  let pk = 0; for (const o of out) for (let i = 0; i < L; i++) pk = Math.max(pk, Math.abs(o[i]));
+  const g = pk > 0 ? Math.pow(10, ceiling / 20) / pk : 1;
+  for (const o of out) for (let i = 0; i < L; i++) o[i] *= g;
+  return out;
+}
+// 16-bit PCM WAV, interleaved.
+function wav16(chs, sr) {
+  const n = chs[0].length, C = chs.length, buf = new ArrayBuffer(44 + n * C * 2), v = new DataView(buf);
+  const str = (o, x) => { for (let i = 0; i < x.length; i++) v.setUint8(o + i, x.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + n * C * 2, true); str(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, C, true); v.setUint32(24, sr, true); v.setUint32(28, sr * C * 2, true); v.setUint16(32, C * 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, n * C * 2, true);
+  for (let i = 0, o = 44; i < n; i++) for (let c = 0; c < C; c++, o += 2) v.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(chs[c][i] * 32767))), true);
+  return new Uint8Array(buf);
+}
+
 // ------------------------------------------------------------------ demo
 // An original eight-bar phrase in D major, 4/4, played at 92 bpm with a
 // breathing tempo, a ritardando into the last two bars, ±12 ms of onset
@@ -797,7 +964,8 @@ function demoDoc(seed = 7) {
 const api = { TPB, KEYS, keyByName, detectKey, spell, spellPc, pedalSpans, releaseWithPedal, isGhost,
   trackBeats, extendBeats, secToBeat, beatToSec, quantise, detectMeter, detect, setMeter, chooseMeter, alignBars, beatWeights, splitBeats, unitOf, extendTracking, currentKey,
   notate, pieces, copyBars, pasteBars, deleteBars, ensureBars, scaleTempo, scoreEvents, smf, demoDoc, newId,
-  ensureIds, deleteNotes, transposeNotes, nudgeNotes, staffOf, toggleStaff, replaceBars };
+  ensureIds, deleteNotes, transposeNotes, nudgeNotes, staffOf, toggleStaff, replaceBars,
+  toMusicXML, audioEvents, hallIR, hallMix, wav16, fft };
 G.ComposeCore = api;
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
