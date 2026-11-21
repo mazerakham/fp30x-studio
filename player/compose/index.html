@@ -161,13 +161,16 @@ function pedalChange(v, ms) {
 const R = { armed: false, m1: 0, m2: 0, period: 0, k: 0, origin: 0, notes: [], open: new Map(), pedal: [], pedal0: 0, preview: 0 };
 function toggleRerecord() {
   if (R.armed) { finishRerecord(true); return; }
+  if (W.armed) toggleWrite(); // commit what was being written first: it can move the beats
   const s = score();
   if (view !== "score" || !s) { info("Re-record works on bars: press <kbd>N</kbd> for the score first."); return; }
   if (!sel) { info("Select the bars to re-record first: click a bar between its notes, <kbd>⇧</kbd>-click to extend, then <kbd>R</kbd>."); return; }
-  if (playing) stop(); if (W.armed) toggleWrite();
+  if (playing) stop();
   audio(); ctx.resume();
-  const k = s.meter, period = 60 / s.bpm, t0 = performance.now() + 150;
-  Object.assign(R, { armed: true, m1: sel[0], m2: sel[1], period, k, origin: t0 + k * period * 1000, notes: [], open: new Map(), pedal: [], pedal0: lastPedal, preview: 0 });
+  // The take's clock starts when the downbeat is *heard*: the click leaves the
+  // speakers late by the output latency (large on Bluetooth), and he plays to it.
+  const k = s.meter, period = 60 / s.bpm, t0 = performance.now() + 150, lat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+  Object.assign(R, { armed: true, m1: sel[0], m2: sel[1], period, k, origin: t0 + (k * period + lat) * 1000, notes: [], open: new Map(), pedal: [], pedal0: lastPedal, preview: 0 });
   noteSel = new Set(); cursor = barStartSec(R.m1);
   let i = 0; // click i sounds at t0 + i periods: k of count-in, then the take's beats
   clickTimer = setInterval(() => { const h = performance.now() + 120; while (t0 + i * period * 1000 < h) { blip(t0 + i * period * 1000, i % k === 0); i++; } }, 30);
@@ -192,10 +195,17 @@ function finishRerecord(keep) {
 // the take punched in, notated a few times a second.
 function previewRerecord(now) {
   if (now - R.preview < 250) return; R.preview = now;
-  const d = JSON.parse(JSON.stringify(doc)), take = rerecordTake(now);
-  if (take.notes.length) K.replaceBars(d, R.m1, R.m2, take, R.period);
-  sc = K.notate(d); scoreDirty = false; layout = null; dirty = true;
+  try {
+    const d = JSON.parse(JSON.stringify(doc)), take = rerecordTake(now);
+    if (take.notes.length) K.replaceBars(d, R.m1, R.m2, take, R.period);
+    sc = K.notate(d); scoreDirty = false; layout = null; dirty = true;
+  } catch (e) { finishRerecord(false); info("Re-record stopped: " + e.message); }
 }
+// During a take only R and Esc act: the buttons and menus are held off, so
+// nothing can change the document (or start a second click) under it.
+for (const ev of ["click", "change", "pointerdown"]) document.querySelector("header").addEventListener(ev, e => {
+  if (!R.armed) return; e.stopPropagation(); e.preventDefault(); info("A take is running: <kbd>R</kbd> keeps it, <kbd>Esc</kbd> throws it away.");
+}, true);
 function toggleWrite() {
   if (playing) stop();
   if (!W.armed) {
@@ -306,9 +316,10 @@ function startCountIn() {
   const m = cursorBar(); K.ensureBars(doc, m + 64);
   const k = doc.meter, b0 = m * k, iv = doc.beats[b0 + 1] - doc.beats[b0];
   const now = performance.now() + 150;
-  W.started = true; W.at = doc.beats[b0]; W.origin = now + k * iv * 1000;
+  audio(); const lat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0), o = now + k * iv * 1000;
+  W.started = true; W.at = doc.beats[b0]; W.origin = o + lat * 1000; // the downbeat as heard (see re-record)
   const ticks = []; for (let i = 0; i < k; i++) ticks.push([now + i * iv * 1000, i === 0]);
-  for (let i = b0; i < doc.beats.length; i++) ticks.push([W.origin + (doc.beats[i] - W.at) * 1000, (i % k) === 0]);
+  for (let i = b0; i < doc.beats.length; i++) ticks.push([o + (doc.beats[i] - W.at) * 1000, (i % k) === 0]);
   let j = 0;
   clickTimer = setInterval(() => { const h = performance.now() + 120; while (j < ticks.length && ticks[j][0] < h) { blip(ticks[j][0], ticks[j][1]); j++; } }, 30);
   $("write").classList.add("rolling");
@@ -726,7 +737,7 @@ $("meter").onchange = e => {
 };
 $("half").onclick = () => { snapshot(); K.scaleTempo(doc, 0.5); sel = null; changed(); };
 $("dbl").onclick = () => { snapshot(); K.scaleTempo(doc, 2); sel = null; changed(); };
-$("redetect").onclick = () => { snapshot(); doc.beats = null; Object.assign(doc, K.detect(doc)); doc.keyOverride = null; sel = null; changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${sigOf(s)}</b>, ${tempoOf(s)}.`); };
+$("redetect").onclick = () => { snapshot(); doc.beats = null; delete doc.minBars; Object.assign(doc, K.detect(doc)); doc.keyOverride = null; sel = null; changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${sigOf(s)}</b>, ${tempoOf(s)}.`); };
 
 // files
 function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }

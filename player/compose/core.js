@@ -8,6 +8,7 @@
 //   meter  beats per bar once notated (2, 3, 4; or 6, 9, 12 with unit 8)
 //   unit   the note value of one beat: 4 (quarter) or 8 (eighth, for x/8 time)
 //   keyOverride  key name, or null to use the detected one
+//   minBars  optional: the score has at least this many bars (set by re-record)
 // A note may carry `staff` (0 treble, 1 bass), set by hand; without it the
 // staff follows the register (middle C and up in the treble).
 // Notation is always *derived* from (notes, beats). Copy, paste and delete of
@@ -400,7 +401,7 @@ function detect(doc) {
 // A time signature chosen by hand: the beats stay, the downbeats are found again.
 function setMeter(doc, meter, unit) {
   const notes = doc.notes.filter(n => !isGhost(n));
-  doc.meter = meter; doc.unit = unit;
+  doc.meter = meter; doc.unit = unit; delete doc.minBars; // bars of a different length
   if (!notes.length || !doc.beats) return;
   const first = Math.min(...notes.map(n => n.t));
   let b = doc.beats.slice();
@@ -507,7 +508,7 @@ function notate(doc) {
     });
     staves[s] = chords;
   }
-  const nBars = Math.max(1, Math.ceil(lastTick / barLen));
+  const nBars = Math.max(1, Math.ceil(lastTick / barLen), doc.minBars || 0);
   const bars = [];
   for (let m = 0; m < nBars; m++) bars.push({ index: m, start: m * barLen, len: barLen, unit, staves: [[], []] });
   for (const s of [0, 1]) {
@@ -595,6 +596,7 @@ function pasteBars(doc, clip, c) {
   doc.notes.sort((a, b) => a.t - b.t || a.p - b.p);
   doc.pedal.sort((a, b) => a[0] - b[0]);
   doc.beats = doc.beats.slice(0, c * k).concat(clip.beats.map(t => t + C), doc.beats.slice(c * k).map(t => t + D));
+  if (doc.minBars > c) doc.minBars += clip.bars;
 }
 function deleteBars(doc, m1, m2) {
   ensureBars(doc, m2 + 1);
@@ -603,42 +605,55 @@ function deleteBars(doc, m1, m2) {
   doc.notes = doc.notes.filter(n => side.get(n) !== 1).map(n => side.get(n) === 2 ? { ...n, t: n.t - D } : n);
   doc.pedal = (doc.pedal || []).filter(([t]) => t < A || t >= B).map(([t, v]) => [t >= B ? t - D : t, v]);
   doc.beats = doc.beats.slice(0, m1 * k).concat(doc.beats.slice((m2 + 1) * k).map(t => t - D));
+  if (doc.minBars > m1) doc.minBars = Math.max(m1, doc.minBars - (m2 - m1 + 1));
 }
 // ------------------------------------------------------------------ re-record
 // Punch-in over bars m1..m2. The take was played to a click of `period` seconds
 // per beat, with its clock at 0 on the downbeat of bar m1: take.notes [{t,d,p,v}],
-// take.pedal [[t, v]], take.pedal0 the pedal's value when the take began.
-// Beat position in the take is t / period; it lands on the same beat position
-// of those bars through the beat map, so the bars keep their own timing and
-// every other bar is untouched. Notes struck past the end of bar m2 add bars
-// after it (at the click's tempo) and push the rest of the piece along.
+// take.pedal [[t, v]] (count-in moves have t < 0), take.pedal0 the pedal's value
+// when the take was armed. Beat position in the take is t / period; it lands on
+// the same beat position of those bars through the beat map, so the bars keep
+// their own timing and every other bar is untouched. Notes struck past the end
+// of bar m2 add bars after it (at the click's tempo) and push the rest along.
+// A take note within `tol` of a beat line before it is on that line, the same
+// reach the quantiser gives (early by EARLY or 40 ms, or late-side 9% / 45 ms),
+// so a note is counted in the bar the score will write it in.
 function replaceBars(doc, m1, m2, take, period) {
-  const k = doc.meter, span = (m2 - m1 + 1) * k;
-  const early = Math.max(EARLY, 0.04 / period);
-  const played = take.notes.filter(n => n.t / period >= -0.25); // the count-in is not the take
-  const lastBar = played.reduce((m, n) => Math.max(m, Math.floor((n.t / period + early) / k)), -1);
-  const extra = Math.max(0, lastBar + 1 - (m2 - m1 + 1));
-  if (extra) pasteBars(doc, { len: extra * k * period, beats: [...Array(extra * k).keys()].map(i => i * period), notes: [], pedal: [] }, m2 + 1);
+  const k = doc.meter, tol = Math.max(EARLY, 0.04 / period, 0.09, 0.045 / period);
+  const played = take.notes.filter(n => n.t / period + tol >= 0) // earlier is the count-in, not the take
+    .map(n => n.t < 0 ? { ...n, t: 0, d: Math.max(0.01, n.d + n.t) } : n); // a hair early for the downbeat is on it
+  const lastBar = played.reduce((m, n) => Math.max(m, Math.floor((n.t / period + tol) / k)), m2 - m1);
+  const extra = lastBar - (m2 - m1);
+  if (extra) pasteBars(doc, { bars: extra, len: extra * k * period, beats: [...Array(extra * k).keys()].map(i => i * period), notes: [], pedal: [] }, m2 + 1);
   ensureBars(doc, m2 + extra + 1);
-  const b0 = m1 * k, b1 = (m2 + extra + 1) * k, A = doc.beats[b0], B = doc.beats[b1];
+  const b0 = m1 * k, b1 = (m2 + extra + 1) * k, A = doc.beats[b0], B = doc.beats[b1], len = (b1 - b0) * period;
   const tk = onsetTicks(doc);
-  doc.notes = doc.notes.filter(n => { const x = tk(n); return x < b0 * TPB || x >= b1 * TPB; });
+  // Out: what was written in the span. Notes struck before it stop at its start,
+  // so nothing old is carried into the bars that were played again.
+  doc.notes = doc.notes.filter(n => { const x = tk(n); return x < b0 * TPB || x >= b1 * TPB; })
+    .map(n => n.t < A && n.t + n.d > A ? { ...n, d: Math.max(0.01, A - n.t) } : n);
+  // In: the take, each note ending by the end of the span (a key still down
+  // when the take was kept is let go there).
   const at = t => beatToSec(b0 + t / period, doc.beats);
   for (const n of played) {
     const t = at(n.t);
-    doc.notes.push({ id: newId(), t, d: Math.max(0.01, at(n.t + n.d) - t), p: n.p, v: n.v });
+    doc.notes.push({ id: newId(), t, d: Math.max(0.01, at(Math.min(n.t + n.d, len)) - t), p: n.p, v: n.v });
   }
-  // The pedal inside the span is the take's; at each edge it is put back to
-  // what it was, so a pedal held in the take does not leak past it.
+  // The pedal inside the span is the take's (its state at the downbeat
+  // includes moves made in the count-in); at the end it is put back to what it
+  // was, so a pedal held in the take does not leak past it.
   const ped = (doc.pedal || []).slice().sort((x, y) => x[0] - y[0]);
   const stateAt = t => { let v = 0; for (const [u, w] of ped) { if (u >= t) break; v = w; } return v; };
-  const after = stateAt(B + 1e-9);
+  const after = stateAt(B + 1e-9), tp = (take.pedal || []).slice().sort((x, y) => x[0] - y[0]);
+  let p0 = take.pedal0 || 0; for (const [t, v] of tp) if (t < 0) p0 = v;
   doc.pedal = ped.filter(([t]) => t < A || t >= B);
-  doc.pedal.push([A, take.pedal0 || 0]);
-  for (const [t, v] of take.pedal || []) if (t >= 0 && t < span * period + extra * k * period) doc.pedal.push([at(t), v]);
+  doc.pedal.push([A, p0]);
+  for (const [t, v] of tp) if (t >= 0 && t < len) doc.pedal.push([at(t), v]);
   doc.pedal.push([B, after]);
   doc.notes.sort((x, y) => x.t - y.t || x.p - y.p);
   doc.pedal.sort((x, y) => x[0] - y[0]);
+  // Re-recorded bars stay bars even if the take left the last of them silent.
+  doc.minBars = Math.max(doc.minBars || 0, m2 + extra + 1);
   return { notes: played.length, extra };
 }
 
@@ -696,7 +711,7 @@ function nudgeNotes(doc, ids, dir) {
 
 // Double or halve the beat, keeping the bar lines where they are when halving.
 function scaleTempo(doc, factor) {
-  const b = doc.beats;
+  const b = doc.beats; delete doc.minBars;
   if (factor === 2) { const nb = []; for (let i = 0; i < b.length - 1; i++) nb.push(b[i], (b[i] + b[i + 1]) / 2); nb.push(b[b.length - 1]); doc.beats = nb; }
   else if (b.length > 3) doc.beats = b.filter((_, i) => i % 2 === 0);
 }
