@@ -900,8 +900,8 @@ function hallIR(sr, rt60 = 2.1, seed = 1000) {
 // The mix reverb.py makes: the wet signal scaled to the dry one's RMS, then
 // (1 - wet)·dry + wet·hall, the whole peak-normalised to `ceiling` dBFS.
 // dry and hall are [left, right] Float32Arrays (hall at least as long). The
-// mix is written into `hall` and returned: a nine-minute take is ~100 MB a
-// channel set, so no third copy is made.
+// mix is written into `hall` and returned: a nine-minute take is ~190 MB a
+// stereo set, so no third copy is made.
 function hallMix(dry, hall, wet = 0.28, ceiling = -1) {
   const rms = chs => { let s = 0, n = 0; for (const c of chs) { for (let i = 0; i < c.length; i++) s += c[i] * c[i]; n += c.length; } return Math.sqrt(s / n); };
   const dr = rms(dry), wr = rms(hall), k = wr > 0 ? dr / wr : 0, L = hall[0].length;
@@ -910,6 +910,17 @@ function hallMix(dry, hall, wet = 0.28, ceiling = -1) {
   const g = pk > 0 ? Math.pow(10, ceiling / 20) / pk : 1;
   for (const o of out) for (let i = 0; i < L; i++) o[i] *= g;
   return out;
+}
+// Velocity layers: each sample carries the instrument's own loudness at the
+// velocity it was recorded at (jRhodes3c: about +14 dB from 40 to 80, +7 dB
+// from 80 to 115). A note's loudness is read off the line through those
+// measured levels, so it is continuous across a layer change; the sample is
+// then scaled from its own level to that. anchors [[vel, dB], ...] ascending.
+function layerGainDb(v, anchors, sampleDb) {
+  let i = 0; while (i < anchors.length - 2 && v > anchors[i + 1][0]) i++;
+  const [v0, d0] = anchors[i], [v1, d1] = anchors[Math.min(i + 1, anchors.length - 1)];
+  const want = v1 === v0 ? d0 : d0 + (d1 - d0) * (v - v0) / (v1 - v0);
+  return Math.min(12, want - sampleDb); // the p layer reaches up to velocity 59, ~7 dB over its own level
 }
 // 16-bit PCM WAV, interleaved.
 function wav16(chs, sr) {
@@ -965,7 +976,7 @@ const api = { TPB, KEYS, keyByName, detectKey, spell, spellPc, pedalSpans, relea
   trackBeats, extendBeats, secToBeat, beatToSec, quantise, detectMeter, detect, setMeter, chooseMeter, alignBars, beatWeights, splitBeats, unitOf, extendTracking, currentKey,
   notate, pieces, copyBars, pasteBars, deleteBars, ensureBars, scaleTempo, scoreEvents, smf, demoDoc, newId,
   ensureIds, deleteNotes, transposeNotes, nudgeNotes, staffOf, toggleStaff, replaceBars,
-  toMusicXML, audioEvents, hallIR, hallMix, wav16, fft };
+  toMusicXML, audioEvents, hallIR, hallMix, wav16, fft, layerGainDb };
 G.ComposeCore = api;
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

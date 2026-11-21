@@ -337,6 +337,8 @@ t("MusicXML: one measure per bar, both staves fill every bar, ties and triplets 
     assert.ok(xml.includes(`<beats>${s.meter}</beats><beat-type>${s.unit}</beat-type>`));
   }
   assert.ok(C.toMusicXML(sc).includes("<divisions>12</divisions><key><fifths>2</fifths><mode>major</mode>"));
+  const x68 = (() => { const x = perform(SIX8, 0.34, 3); Object.assign(x, C.detect(x)); return C.toMusicXML(C.notate(x)); })();
+  assert.ok(x68.includes("<divisions>24</divisions>"), "x/8: 24 divisions a quarter, so an eighth (12 ticks) is half a quarter");
 });
 t("MusicXML carries an edit: A4 raised to B♭4 in bar 1, a note moved to the bass", () => {
   const d = JSON.parse(JSON.stringify(doc)); C.transposeNotes(d, ["d0"], 1); C.toggleStaff(d, ["d1"]);
@@ -362,6 +364,26 @@ t("hall mix peaks at the ceiling, WAV header is 16-bit PCM", () => {
   assert.ok(Math.abs(pk - Math.pow(10, -1 / 20)) < 1e-6); assert.strictEqual(out[0].length, 150);
   const w = C.wav16(out, 44100); assert.strictEqual(String.fromCharCode(...w.slice(0, 4)), "RIFF");
   assert.strictEqual(new DataView(w.buffer).getUint16(34, true), 16); assert.strictEqual(w.length, 44 + 150 * 4);
+});
+t("velocity layers join without a step: loudness is continuous across 59/60 and 96/97", () => {
+  const anchors = [[40, -25.4], [80, -11.6], [115, -3.8]], lv = { p: 40, m: 80, f: 115 }, db = { p: -25.4, m: -11.6, f: -3.8 };
+  const loud = (v, L) => db[L] + C.layerGainDb(v, anchors, db[L]);
+  assert.ok(Math.abs(loud(59, "p") - loud(60, "m")) < 0.5); assert.ok(Math.abs(loud(96, "m") - loud(97, "f")) < 0.5);
+  assert.ok(Math.abs(loud(80, "m") - -11.6) < 1e-9); assert.ok(loud(30, "p") < loud(40, "p") && loud(127, "f") > loud(115, "f"));
+});
+t("hall mix scales the hall to the dry signal's RMS before mixing (what wet 0.28 means in reverb.py)", () => {
+  const n = 1000, dry = [new Float32Array(n), new Float32Array(n)], hall = [new Float32Array(n), new Float32Array(n)];
+  for (let i = 0; i < n; i++) { dry[0][i] = dry[1][i] = Math.sin(i / 7) * 0.1; hall[0][i] = hall[1][i] = Math.cos(i / 5) * 0.8; }
+  const d0 = dry[0].slice(), h0 = hall[0].slice(), out = C.hallMix(dry, hall, 0.28, 0);
+  // out = g·(0.72·dry + 0.28·k·hall), k = rms(dry)/rms(hall): recover g from one sample, check the rest
+  const rms = a => Math.sqrt(a.reduce((t, x) => t + x * x, 0) / a.length), k = rms(d0) / rms(h0), want = i => 0.72 * d0[i] + 0.28 * k * h0[i], g = out[0][10] / want(10);
+  for (const i of [3, 77, 500, 999]) assert.ok(Math.abs(out[0][i] - g * want(i)) < 1e-5, "sample " + i);
+});
+t("hall impulse response: treble dies faster than bass, as reverb.py's three bands", () => {
+  const sr = 16000, ir = C.hallIR(sr, 2.1, 1000), N = 8192, at = Math.floor(sr * 1.2);
+  const re = new Float64Array(N), im = new Float64Array(N); for (let i = 0; i < N; i++) re[i] = ir[at + i] || 0; C.fft(re, im, false);
+  const band = (lo, hi) => { let e = 0; for (let k = 1; k < N / 2; k++) { const f = k * sr / N; if (f >= lo && f < hi) e += re[k] ** 2 + im[k] ** 2; } return e / ((hi - lo) / sr * N); };
+  assert.ok(band(100, 500) > 30 * band(3000, 7000), "late tail: lows should be well above highs");
 });
 t("audio events: every note as played (pedal holds), or the score at its tempo", () => {
   const ev = C.audioEvents(doc, sc, "played"); assert.strictEqual(ev.length, doc.notes.filter(n => !C.isGhost(n)).length);

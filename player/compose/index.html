@@ -807,18 +807,22 @@ $("pdf").onclick = async () => {
 // fluidsynth, one probed gain) played in an OfflineAudioContext, then the hall
 // of fp30x_studio/reverb.py (--wet 0.28 --rt60 2.1) by convolution, mixed and
 // peak-normalised the way reverb.py does it, written as 16-bit WAV.
-const RHODES = { p: 40, m: 80, f: 115 }, rhodesBufs = {};
+const RHODES = { p: 40, m: 80, f: 115 }, rhodesBufs = {}, rhodesDb = {};
 async function loadRhodes(ac) {
   const jobs = [];
   for (let p = 21; p < 109; p += 3) for (const L in RHODES) if (!(p + L in rhodesBufs))
-    jobs.push(fetch(`samples/rhodes/${p}${L}.mp3`).then(r => r.ok ? r.arrayBuffer() : null).then(b => b && ac.decodeAudioData(b)).then(b => { if (b) rhodesBufs[p + L] = b; }).catch(() => {}));
+    jobs.push(fetch(`samples/rhodes/${p}${L}.mp3`).then(r => r.ok ? r.arrayBuffer() : null).then(b => b && ac.decodeAudioData(b)).then(b => { if (!b) return; rhodesBufs[p + L] = b; let pk = 0; for (let c = 0; c < b.numberOfChannels; c++) for (const x of b.getChannelData(c)) pk = Math.max(pk, Math.abs(x)); rhodesDb[p + L] = 20 * Math.log10(pk || 1e-6); }).catch(() => {}));
   await Promise.all(jobs);
   if (!Object.keys(rhodesBufs).length) throw Error("no Rhodes samples in player/samples/rhodes: run .venv/bin/python player/make_samples.py --rhodes once");
 }
 function rhodesVoice(p, v) {
   const L = v < 60 ? "p" : v < 97 ? "m" : "f";
   let best = null; for (let q = 21; q < 109; q += 3) if (rhodesBufs[q + L] && (best === null || Math.abs(q - p) < Math.abs(best - p))) best = q;
-  return best === null ? null : { buf: rhodesBufs[best + L], rate: Math.pow(2, (p - best) / 12), gain: Math.max(0.35, Math.min(1.6, v / RHODES[L])) * 0.5 };
+  if (best === null) return null;
+  // loudness along the line through this pitch's layers (missing layers skipped), so a crescendo has no step at a layer change
+  const anchors = Object.keys(RHODES).filter(x => rhodesDb[best + x] != null).map(x => [RHODES[x], rhodesDb[best + x]]);
+  const db = K.layerGainDb(v, anchors, rhodesDb[best + L]);
+  return { buf: rhodesBufs[best + L], rate: Math.pow(2, (p - best) / 12), gain: 0.5 * Math.pow(10, db / 20) };
 }
 $("wav").onclick = async () => {
   const mode = view === "score" ? "written" : "played", s = mode === "written" ? needScore() : (doc.beats ? score() : null);
