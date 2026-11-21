@@ -54,6 +54,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   <kbd>Space</kbd> play from the cursor · <kbd>M</kbd> click track while writing ·
   click to place the cursor ·<br>
   <b>Score, bars</b>: click between notes to select a bar, <kbd>⇧</kbd>-click to extend, <kbd>⌘C</kbd> copy, <kbd>⌘V</kbd> paste before the cursor bar, <kbd>⌫</kbd> delete bars ·<br>
+  <b>Re-record</b>: select bars, <kbd>R</kbd> counts in one bar, play, <kbd>R</kbd> keeps it (<kbd>Esc</kbd> throws it away) ·<br>
   <b>Score, notes</b>: click a notehead to select it (it turns orange), <kbd>⇧</kbd>-click adds, <kbd>⌫</kbd> delete, <kbd>↑</kbd><kbd>↓</kbd> a semitone, <kbd>←</kbd><kbd>→</kbd> one subdivision earlier or later, <kbd>S</kbd> to the other staff (kept when saved) ·<br>
   <kbd>⌘Z</kbd> undo · <kbd>⇧⌘Z</kbd> redo · <kbd>Home</kbd><kbd>End</kbd> cursor to start or end · <kbd>+</kbd><kbd>−</kbd> zoom Live
 </div>
@@ -130,6 +131,7 @@ const songTime = ms => W.at + (ms - W.origin) / 1000;
 let noodles = [];
 function noteOn(p, v, ms) {
   held.set(p, { ms, v });
+  if (R.armed) { const n = { t: (ms - R.origin) / 1000, d: 0.01, p, v }; R.notes.push(n); R.open.set(p, n); return; }
   if (W.armed && !playing) {
     if (!W.started) { W.started = true; W.origin = ms; W.at = cursor; }
     const n = { id: K.newId(), t: songTime(ms), d: 0.01, p, v };
@@ -140,11 +142,70 @@ function noteOn(p, v, ms) {
 }
 function noteOff(p, ms) {
   held.delete(p);
+  if (R.open.has(p)) { const n = R.open.get(p); n.d = Math.max(0.01, (ms - R.origin) / 1000 - n.t); R.open.delete(p); return; }
   const n = W.open.get(p);
   if (n) { n.d = Math.max(0.01, songTime(ms) - n.t); W.open.delete(p); scoreDirty = true; }
   for (const x of noodles) if (x.p === p && x.end === null) x.end = ms;
 }
-function pedalChange(v, ms) { if (W.armed && W.started && !playing) { doc.pedal.push([songTime(ms), v]); scoreDirty = true; } }
+let lastPedal = 0;
+function pedalChange(v, ms) {
+  lastPedal = v;
+  if (R.armed) { R.pedal.push([(ms - R.origin) / 1000, v]); return; }
+  if (W.armed && W.started && !playing) { doc.pedal.push([songTime(ms), v]); scoreDirty = true; }
+}
+
+// ================================================================ re-record
+// With bars selected, R counts in one bar at the score's tempo and keeps the
+// click going; what is played then replaces those bars (K.replaceBars maps the
+// take's beats onto theirs). R again keeps the take, Esc throws it away.
+const R = { armed: false, m1: 0, m2: 0, period: 0, k: 0, origin: 0, notes: [], open: new Map(), pedal: [], pedal0: 0, preview: 0 };
+function toggleRerecord() {
+  if (R.armed) { finishRerecord(true); return; }
+  if (W.armed) toggleWrite(); // commit what was being written first: it can move the beats
+  const s = score();
+  if (view !== "score" || !s) { info("Re-record works on bars: press <kbd>N</kbd> for the score first."); return; }
+  if (!sel) { info("Select the bars to re-record first: click a bar between its notes, <kbd>⇧</kbd>-click to extend, then <kbd>R</kbd>."); return; }
+  if (playing) stop();
+  audio(); ctx.resume();
+  // The take's clock starts when the downbeat is *heard*: the click leaves the
+  // speakers late by the output latency (large on Bluetooth), and he plays to it.
+  const k = s.meter, period = 60 / s.bpm, t0 = performance.now() + 150, lat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+  Object.assign(R, { armed: true, m1: sel[0], m2: sel[1], period, k, origin: t0 + (k * period + lat) * 1000, notes: [], open: new Map(), pedal: [], pedal0: lastPedal, preview: 0 });
+  noteSel = new Set(); cursor = barStartSec(R.m1);
+  let i = 0; // click i sounds at t0 + i periods: k of count-in, then the take's beats
+  clickTimer = setInterval(() => { const h = performance.now() + 120; while (t0 + i * period * 1000 < h) { blip(t0 + i * period * 1000, i % k === 0); i++; } }, 30);
+  $("write").classList.add("on", "rolling");
+  const bars = R.m1 === R.m2 ? `bar ${R.m1 + 1}` : `bars ${R.m1 + 1}–${R.m2 + 1}`;
+  info(`<b>Re-recording ${bars}</b>: one bar of count-in, then play. <kbd>R</kbd> again keeps it · <kbd>Esc</kbd> throws it away. Playing past the end adds bars.`);
+}
+function rerecordTake(now) {
+  return { notes: R.notes.map(n => R.open.get(n.p) === n ? { ...n, d: Math.max(0.01, (now - R.origin) / 1000 - n.t) } : n), pedal: R.pedal, pedal0: R.pedal0 };
+}
+function finishRerecord(keep) {
+  stopClick(); $("write").classList.remove("on", "rolling");
+  const take = rerecordTake(performance.now()); R.armed = false; R.open = new Map(); scoreDirty = true; layout = null;
+  const bars = R.m1 === R.m2 ? `Bar ${R.m1 + 1}` : `Bars ${R.m1 + 1}–${R.m2 + 1}`;
+  if (!keep) { info(`Re-record thrown away. ${bars} unchanged.`); return; }
+  if (!take.notes.some(n => n.t / R.period >= -0.25)) { info(`Nothing played. ${bars} unchanged.`); return; }
+  snapshot(); const r = K.replaceBars(doc, R.m1, R.m2, take, R.period); changed();
+  sel = [R.m1, R.m2 + r.extra]; cursor = barStartSec(R.m1);
+  info(`${bars} re-recorded: ${r.notes} note${r.notes === 1 ? "" : "s"}.` + (r.extra ? ` You played on, so ${r.extra} bar${r.extra > 1 ? "s were" : " was"} added after them.` : "") + " <kbd>⌘Z</kbd> brings back what was there.");
+}
+// While the take runs, the score shows it in place: a copy of the document with
+// the take punched in, notated a few times a second.
+function previewRerecord(now) {
+  if (now - R.preview < 250) return; R.preview = now;
+  try {
+    const d = JSON.parse(JSON.stringify(doc)), take = rerecordTake(now);
+    if (take.notes.length) K.replaceBars(d, R.m1, R.m2, take, R.period);
+    sc = K.notate(d); scoreDirty = false; layout = null; dirty = true;
+  } catch (e) { finishRerecord(false); info("Re-record stopped: " + e.message); }
+}
+// During a take only R and Esc act: the buttons and menus are held off, so
+// nothing can change the document (or start a second click) under it.
+for (const ev of ["click", "change", "pointerdown"]) document.querySelector("header").addEventListener(ev, e => {
+  if (!R.armed) return; e.stopPropagation(); e.preventDefault(); info("A take is running: <kbd>R</kbd> keeps it, <kbd>Esc</kbd> throws it away.");
+}, true);
 function toggleWrite() {
   if (playing) stop();
   if (!W.armed) {
@@ -255,9 +316,10 @@ function startCountIn() {
   const m = cursorBar(); K.ensureBars(doc, m + 64);
   const k = doc.meter, b0 = m * k, iv = doc.beats[b0 + 1] - doc.beats[b0];
   const now = performance.now() + 150;
-  W.started = true; W.at = doc.beats[b0]; W.origin = now + k * iv * 1000;
+  audio(); const lat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0), o = now + k * iv * 1000;
+  W.started = true; W.at = doc.beats[b0]; W.origin = o + lat * 1000; // the downbeat as heard (see re-record)
   const ticks = []; for (let i = 0; i < k; i++) ticks.push([now + i * iv * 1000, i === 0]);
-  for (let i = b0; i < doc.beats.length; i++) ticks.push([W.origin + (doc.beats[i] - W.at) * 1000, (i % k) === 0]);
+  for (let i = b0; i < doc.beats.length; i++) ticks.push([o + (doc.beats[i] - W.at) * 1000, (i % k) === 0]);
   let j = 0;
   clickTimer = setInterval(() => { const h = performance.now() + 120; while (j < ticks.length && ticks[j][0] < h) { blip(ticks[j][0], ticks[j][1]); j++; } }, 30);
   $("write").classList.add("rolling");
@@ -428,10 +490,11 @@ function drawScore() {
   let tick = null;
   if (playing && plan.s) tick = plan.startTick + playPos() * s.bpm / 60 * TPB;
   else if (W.started) tick = K.secToBeat(songTime(performance.now()), s.beats) * TPB;
+  else if (R.armed) tick = (R.m1 * R.k + (performance.now() - R.origin) / 1000 / R.period) * TPB;
   if (tick != null && tick >= 0) {
     const m = Math.min(bars.length - 1, Math.floor(tick / s.barLen)), b = bars[m], y = systems[b.sys];
     const x = tickX(b, Math.min(b.bar.len, tick - b.bar.start));
-    g.strokeStyle = W.started ? C.rec : C.sel; g.lineWidth = 2; g.beginPath(); g.moveTo(x, yT(y, 42)); g.lineTo(x, yB(y, 14)); g.stroke();
+    g.strokeStyle = W.started || R.armed ? C.rec : C.sel; g.lineWidth = 2; g.beginPath(); g.moveTo(x, yT(y, 42)); g.lineTo(x, yB(y, 14)); g.stroke();
     const top = y.y - 10; if (top < wrap.scrollTop || top + SYS_H > wrap.scrollTop + wrap.clientHeight) wrap.scrollTop = top;
   }
 }
@@ -561,7 +624,7 @@ function drawTies(g, C, bars, systems) {
   }
 }
 cvS.addEventListener("pointerdown", e => {
-  const s = score(); if (!s || !layout || W.started) return;
+  const s = score(); if (!s || !layout || W.started || R.armed) return;
   if (playing) stop();
   const r = sbox.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; // score coordinates: the box scrolls, the canvas sticks
   // a notehead: select it (⇧ adds or removes), say what it is and sound it
@@ -586,7 +649,7 @@ cvS.addEventListener("pointerdown", e => {
   if (e.shiftKey && sel) sel = [Math.min(sel[0], m), Math.max(sel[1], m)];
   else sel = [m, m];
   cursor = barStartSec(sel[0]);
-  info(sel[0] === sel[1] ? `<b>Bar ${m + 1}</b> selected. <kbd>⌘C</kbd> copy · <kbd>⌘V</kbd> paste before it · <kbd>⌫</kbd> delete the bar · <kbd>W</kbd> write from here` : `<b>Bars ${sel[0] + 1}–${sel[1] + 1}</b> selected. <kbd>⌘C</kbd> copy · <kbd>⌫</kbd> delete the bars`);
+  info(sel[0] === sel[1] ? `<b>Bar ${m + 1}</b> selected. <kbd>⌘C</kbd> copy · <kbd>⌘V</kbd> paste before it · <kbd>⌫</kbd> delete the bar · <kbd>R</kbd> re-record it · <kbd>W</kbd> write from here` : `<b>Bars ${sel[0] + 1}–${sel[1] + 1}</b> selected. <kbd>⌘C</kbd> copy · <kbd>⌫</kbd> delete the bars · <kbd>R</kbd> re-record them`);
 });
 
 // ================================================================ bar edits
@@ -674,7 +737,7 @@ $("meter").onchange = e => {
 };
 $("half").onclick = () => { snapshot(); K.scaleTempo(doc, 0.5); sel = null; changed(); };
 $("dbl").onclick = () => { snapshot(); K.scaleTempo(doc, 2); sel = null; changed(); };
-$("redetect").onclick = () => { snapshot(); doc.beats = null; Object.assign(doc, K.detect(doc)); doc.keyOverride = null; sel = null; changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${sigOf(s)}</b>, ${tempoOf(s)}.`); };
+$("redetect").onclick = () => { snapshot(); doc.beats = null; delete doc.minBars; Object.assign(doc, K.detect(doc)); doc.keyOverride = null; sel = null; changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${sigOf(s)}</b>, ${tempoOf(s)}.`); };
 
 // files
 function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
@@ -696,13 +759,15 @@ addEventListener("keydown", e => {
   redraw();
   if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
   const m = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
+  if (R.armed && k !== "r" && e.key !== "Escape") { e.preventDefault(); return; } // keys are quiet during a take
   if (m && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (m && k === "c") { e.preventDefault(); copySel(); }
   else if (m && k === "v") { e.preventDefault(); pasteClip(); }
   else if (m && k === "s") { e.preventDefault(); $("save").click(); }
   else if (m && k === "o") { e.preventDefault(); $("open").click(); }
   else if (m) return;
-  else if (k === "w") toggleWrite();
+  else if (k === "w") { if (R.armed) finishRerecord(false); toggleWrite(); }
+  else if (k === "r") toggleRerecord();
   else if (k === "n") setView(view === "live" ? "score" : "live");
   else if (k === "m") $("met").click();
   else if (k === "s" && view === "score" && pruneNoteSel()) editNotes("staff");
@@ -712,6 +777,7 @@ addEventListener("keydown", e => {
     e.preventDefault(); const up = e.key === "ArrowUp", right = e.key === "ArrowRight";
     if (up || e.key === "ArrowDown") editNotes("pitch", up ? 1 : -1); else editNotes("time", right ? 1 : -1);
   }
+  else if (e.key === "Escape" && R.armed) finishRerecord(false);
   else if (e.key === "Escape") { sel = null; noteSel = new Set(); info(""); }
   else if (e.key === "Home") { cursor = 0; vt = 0; sel = null; noteSel = new Set(); }
   else if (e.key === "End") { cursor = view === "score" && score() ? barStartSec(score().nBars) : docEnd(); sel = null; vt = Math.max(0, cursor - 3); }
@@ -725,7 +791,8 @@ function frame(now) {
   if (view === "live") drawLive();
   else {
     if (W.started && now - lastNotate > 200) { scoreDirty = true; lastNotate = now; layout = null; dirty = true; }
-    if (dirty || playing || W.started) { dirty = false; drawScore(); }
+    if (R.armed) previewRerecord(now);
+    if (dirty || playing || W.started || R.armed) { dirty = false; drawScore(); }
   }
   requestAnimationFrame(frame);
 }
