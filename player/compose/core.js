@@ -604,6 +604,44 @@ function deleteBars(doc, m1, m2) {
   doc.pedal = (doc.pedal || []).filter(([t]) => t < A || t >= B).map(([t, v]) => [t >= B ? t - D : t, v]);
   doc.beats = doc.beats.slice(0, m1 * k).concat(doc.beats.slice((m2 + 1) * k).map(t => t - D));
 }
+// ------------------------------------------------------------------ re-record
+// Punch-in over bars m1..m2. The take was played to a click of `period` seconds
+// per beat, with its clock at 0 on the downbeat of bar m1: take.notes [{t,d,p,v}],
+// take.pedal [[t, v]], take.pedal0 the pedal's value when the take began.
+// Beat position in the take is t / period; it lands on the same beat position
+// of those bars through the beat map, so the bars keep their own timing and
+// every other bar is untouched. Notes struck past the end of bar m2 add bars
+// after it (at the click's tempo) and push the rest of the piece along.
+function replaceBars(doc, m1, m2, take, period) {
+  const k = doc.meter, span = (m2 - m1 + 1) * k;
+  const early = Math.max(EARLY, 0.04 / period);
+  const played = take.notes.filter(n => n.t / period >= -0.25); // the count-in is not the take
+  const lastBar = played.reduce((m, n) => Math.max(m, Math.floor((n.t / period + early) / k)), -1);
+  const extra = Math.max(0, lastBar + 1 - (m2 - m1 + 1));
+  if (extra) pasteBars(doc, { len: extra * k * period, beats: [...Array(extra * k).keys()].map(i => i * period), notes: [], pedal: [] }, m2 + 1);
+  ensureBars(doc, m2 + extra + 1);
+  const b0 = m1 * k, b1 = (m2 + extra + 1) * k, A = doc.beats[b0], B = doc.beats[b1];
+  const tk = onsetTicks(doc);
+  doc.notes = doc.notes.filter(n => { const x = tk(n); return x < b0 * TPB || x >= b1 * TPB; });
+  const at = t => beatToSec(b0 + t / period, doc.beats);
+  for (const n of played) {
+    const t = at(n.t);
+    doc.notes.push({ id: newId(), t, d: Math.max(0.01, at(n.t + n.d) - t), p: n.p, v: n.v });
+  }
+  // The pedal inside the span is the take's; at each edge it is put back to
+  // what it was, so a pedal held in the take does not leak past it.
+  const ped = (doc.pedal || []).slice().sort((x, y) => x[0] - y[0]);
+  const stateAt = t => { let v = 0; for (const [u, w] of ped) { if (u >= t) break; v = w; } return v; };
+  const after = stateAt(B + 1e-9);
+  doc.pedal = ped.filter(([t]) => t < A || t >= B);
+  doc.pedal.push([A, take.pedal0 || 0]);
+  for (const [t, v] of take.pedal || []) if (t >= 0 && t < span * period + extra * k * period) doc.pedal.push([at(t), v]);
+  doc.pedal.push([B, after]);
+  doc.notes.sort((x, y) => x.t - y.t || x.p - y.p);
+  doc.pedal.sort((x, y) => x[0] - y[0]);
+  return { notes: played.length, extra };
+}
+
 // ------------------------------------------------------------------ note edits
 // Notes are addressed by id: the score carries each note's id on every head it
 // draws (a tied note has several), so a click on any of them is a click on the note.
@@ -744,7 +782,7 @@ function demoDoc(seed = 7) {
 const api = { TPB, KEYS, keyByName, detectKey, spell, spellPc, pedalSpans, releaseWithPedal, isGhost,
   trackBeats, extendBeats, secToBeat, beatToSec, quantise, detectMeter, detect, setMeter, chooseMeter, alignBars, beatWeights, splitBeats, unitOf, extendTracking, currentKey,
   notate, pieces, copyBars, pasteBars, deleteBars, ensureBars, scaleTempo, scoreEvents, smf, demoDoc, newId,
-  ensureIds, deleteNotes, transposeNotes, nudgeNotes, staffOf, toggleStaff };
+  ensureIds, deleteNotes, transposeNotes, nudgeNotes, staffOf, toggleStaff, replaceBars };
 G.ComposeCore = api;
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

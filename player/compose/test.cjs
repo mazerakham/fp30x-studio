@@ -255,6 +255,42 @@ t("moving notes between staves changes no onset tick", () => {
   C.toggleStaff(d, ["d27", "d28", "d5", "d6"]); const after = ticksOf(C.notate(d));
   for (const [id, v] of before) assert.deepStrictEqual(after.get(id), v, id);
 });
+// ------------------------------------------------------------------ re-record
+// A take played to the click: [pitch, beat, beats long], with scatter.
+function take(spec, period, seed = 1) {
+  let r = seed; const j = () => ((r = (r * 16807) % 2147483647) / 2147483647 - 0.5) * 0.03;
+  return { notes: spec.map(([p, b, l]) => { const t = b * period + j(); return { t, d: l * period * 0.9, p, v: 70 }; }), pedal: [], pedal0: 0 };
+}
+const NEW56 = [[72, 0, 1], [74, 1, 1], [76, 2, 1], [77, 3, 1], [79, 4, 2], [77, 6, 2], [48, 0, 4], [43, 4, 4]];
+t("re-record bars 5-6: they hold the take, every other bar is unchanged", () => {
+  const bad = [];
+  for (let seed = 1; seed <= 20; seed++) {
+    const d = C.demoDoc(seed); Object.assign(d, C.detect(d)); const s0 = C.notate(d), P = 60 / s0.bpm;
+    const r = C.replaceBars(d, 4, 5, take(NEW56, P, seed), P); const s1 = C.notate(d), g0 = barSigs(s0), g1 = barSigs(s1);
+    const strip = x => x.replace(/:\d+\/\d+/g, "");
+    if (r.extra || s1.nBars !== 8) { bad.push(`seed ${seed}: ${s1.nBars} bars`); continue; }
+    for (const i of [0, 1, 2, 4 + 3, 6]) if (g1[i] !== g0[i] && !(i === 6 && strip(g1[i]) === strip(g0[i]))) bad.push(`seed ${seed} bar ${i + 1}: ${g0[i]} -> ${g1[i]}`);
+    if (g1[3] !== g0[3]) bad.push(`seed ${seed} bar 4: ${g0[3]} -> ${g1[3]}`);
+    if (g1[4] !== "72:0/12 74:12/12 76:24/12 77:36/12 | 48:0/48") bad.push(`seed ${seed} bar 5: ${g1[4]}`);
+    if (g1[5] !== "79:0/24 77:24/24 | 43:0/48") bad.push(`seed ${seed} bar 6: ${g1[5]}`);
+  }
+  assert.deepStrictEqual(bad, []);
+});
+t("re-record that runs past the end adds bars, and the rest of the piece follows them", () => {
+  const d = C.demoDoc(3); Object.assign(d, C.detect(d)); const s0 = C.notate(d), P = 60 / s0.bpm;
+  const r = C.replaceBars(d, 4, 5, take(NEW56.concat([[72, 8, 4], [36, 8, 4]]), P), P);
+  const s1 = C.notate(d), g0 = barSigs(s0), g1 = barSigs(s1);
+  assert.strictEqual(r.extra, 1); assert.strictEqual(s1.nBars, 9);
+  assert.strictEqual(g1[6], "72:0/48 | 36:0/48");
+  assert.deepStrictEqual(g1.slice(7), g0.slice(6)); assert.deepStrictEqual(g1.slice(0, 4), g0.slice(0, 4));
+});
+t("re-record in 6/8 lands on the bar's eighths", () => {
+  const d = perform(SIX8, 0.34, 2); Object.assign(d, C.detect(d)); const s0 = C.notate(d), P = 60 / s0.bpm;
+  C.replaceBars(d, 2, 2, take([[60, 0, 3], [62, 3, 1], [64, 4, 1], [65, 5, 1]], P), P);
+  const g1 = barSigs(C.notate(d)), g0 = barSigs(s0);
+  assert.strictEqual(g1[2].split(" | ")[0], "60:0/36 62:36/12 64:48/12 65:60/12");
+  assert.deepStrictEqual(g1.slice(3), g0.slice(3)); assert.deepStrictEqual(g1.slice(0, 2), g0.slice(0, 2));
+});
 t("ensureIds gives every note a distinct id", () => {
   const d = { notes: [{ t: 0, d: 1, p: 60, v: 60 }, { id: "a", t: 1, d: 1, p: 62, v: 60 }, { id: "a", t: 2, d: 1, p: 64, v: 60 }] };
   C.ensureIds(d); assert.strictEqual(new Set(d.notes.map(n => n.id)).size, 3); assert.strictEqual(d.notes[1].id, "a");
