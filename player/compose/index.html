@@ -44,6 +44,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   </div>
   <div class="grp"><button id="undo" title="⌘Z">Undo</button><button id="new">New</button><button id="demo">Demo</button></div>
   <div class="grp"><button id="save" title="⌘S">Save</button><button id="open" title="⌘O">Open</button><button id="mid">MIDI file</button></div>
+  <div class="grp" id="exportCtl"><span class="tempo">Export</span><button id="xml" title="The score as MusicXML: opens in MuseScore">MusicXML</button><button id="pdf" title="The score engraved as a PDF">PDF</button><button id="wav" title="Rhodes in a hall, as a WAV file: in Score view the score as written, in Live view the performance">Audio</button></div>
   <span id="midi">MIDI: starting…</span>
 </header>
 <div id="wrap"><canvas id="live"></canvas><div id="sbox" hidden><canvas id="score"></canvas></div></div>
@@ -54,6 +55,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-b
   <kbd>Space</kbd> play from the cursor · <kbd>M</kbd> click track while writing ·
   click to place the cursor ·<br>
   <b>Score, bars</b>: click between notes to select a bar, <kbd>⇧</kbd>-click to extend, <kbd>⌘C</kbd> copy, <kbd>⌘V</kbd> paste before the cursor bar, <kbd>⌫</kbd> delete bars ·<br>
+  <b>Export</b>: MusicXML (opens in MuseScore), PDF (engraved by Verovio), Audio (Rhodes in a hall, WAV: the score as written from Score view, the performance from Live view) ·<br>
   <b>Re-record</b>: select bars, <kbd>R</kbd> counts in one bar, play, <kbd>R</kbd> keeps it (<kbd>Esc</kbd> throws it away) ·<br>
   <b>Score, notes</b>: click a notehead to select it (it turns orange), <kbd>⇧</kbd>-click adds, <kbd>⌫</kbd> delete, <kbd>↑</kbd><kbd>↓</kbd> a semitone, <kbd>←</kbd><kbd>→</kbd> one subdivision earlier or later, <kbd>S</kbd> to the other staff (kept when saved) ·<br>
   <kbd>⌘Z</kbd> undo · <kbd>⇧⌘Z</kbd> redo · <kbd>Home</kbd><kbd>End</kbd> cursor to start or end · <kbd>+</kbd><kbd>−</kbd> zoom Live
@@ -740,7 +742,7 @@ $("dbl").onclick = () => { snapshot(); K.scaleTempo(doc, 2); sel = null; changed
 $("redetect").onclick = () => { snapshot(); doc.beats = null; delete doc.minBars; Object.assign(doc, K.detect(doc)); doc.keyOverride = null; sel = null; changed(); const s = score(); info(`Heard <b>${s.key.name}</b>, <b>${sigOf(s)}</b>, ${tempoOf(s)}.`); };
 
 // files
-function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 120000); } // a 100 MB WAV can take a while to hand over
 const stamp = () => new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
 $("save").onclick = async () => {
   const text = JSON.stringify(doc), name = `compose-${stamp()}.json`;
@@ -753,6 +755,106 @@ $("mid").onclick = () => {
   if (s) download(new Blob([K.smf(K.scoreEvents(s, 0), s.bpm, s.meter, s.unit)], { type: "audio/midi" }), `compose-${stamp()}-score.mid`);
   else { const ev = doc.notes.map(n => ({ t: n.t, d: n.d, p: n.p, v: n.v })); ev.pedal = doc.pedal; download(new Blob([K.smf(ev, 120, null)], { type: "audio/midi" }), `compose-${stamp()}-played.mid`); }
   info(s ? "MIDI file of the score: steady tempo, bars and time signature included. Opens in MuseScore." : "MIDI file of what was played, with its own timing.");
+};
+
+// ================================================================ export
+// Everything is made in the page from the document as it is now, edits included.
+const exportName = () => (doc.source ? decodeURIComponent(doc.source.split("/").pop()).replace(/\.compose\.json$|\.json$/, "") : `compose-${stamp()}`);
+function needScore() { const s = doc.beats ? score() : null; if (!s) info("Export works on the score: press <kbd>N</kbd> first."); return s; }
+const xmlOf = s => K.toMusicXML(s, { title: exportName() });
+$("xml").onclick = () => {
+  const s = needScore(); if (!s) return;
+  download(new Blob([xmlOf(s)], { type: "application/vnd.recordare.musicxml+xml" }), exportName() + ".musicxml");
+  info(`MusicXML of the score, ${s.nBars} bars, with your edits. Open it in MuseScore.`);
+};
+// PDF: Verovio engraves the same MusicXML to SVG pages, svg2pdf draws them into a jsPDF.
+const CDN = { verovio: "https://cdn.jsdelivr.net/npm/verovio@6.3.0/dist/verovio-toolkit-wasm.js",
+  jspdf: "https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js", svg2pdf: "https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/dist/svg2pdf.umd.min.js" };
+const loaded = {};
+function script(src) { return loaded[src] || (loaded[src] = new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = () => { delete loaded[src]; no(Error("could not load " + src.split("/npm/")[1])); }; document.head.appendChild(el); })); }
+let vrvToolkit = null;
+async function verovioToolkit() {
+  if (vrvToolkit) return vrvToolkit;
+  await script(CDN.verovio);
+  await new Promise(ok => { if (verovio.module.calledRun) ok(); else verovio.module.onRuntimeInitialized = ok; });
+  return vrvToolkit = new verovio.toolkit();
+}
+$("pdf").onclick = async () => {
+  const s = needScore(); if (!s) return;
+  try {
+    info("Engraving the score…");
+    const [tk] = await Promise.all([verovioToolkit(), script(CDN.jspdf).then(() => script(CDN.svg2pdf))]);
+    // A4 portrait, tenths of a millimetre; scale 40 fits about five systems a page.
+    tk.setOptions({ pageWidth: 2100, pageHeight: 2970, pageMarginTop: 80, pageMarginBottom: 80, pageMarginLeft: 100, pageMarginRight: 100, scale: 40, adjustPageHeight: false, footer: "none", header: "auto", breaks: "auto" });
+    // The metronome mark is left off the PDF: Verovio draws its note symbol in a
+    // music font that svg2pdf cannot embed, and it came out as mojibake.
+    if (!tk.loadData(xmlOf(s).replace(/<direction placement="above"><direction-type><metronome>[\s\S]*?<\/direction>/, ""))) throw Error("Verovio could not read the score");
+    const pages = tk.getPageCount(), pdf = new jspdf.jsPDF({ unit: "mm", format: "a4", compress: true }), box = document.createElement("div");
+    box.style.cssText = "position:absolute;left:-10000px;top:0;width:800px"; document.body.appendChild(box);
+    try {
+      for (let i = 1; i <= pages; i++) {
+        info(`Engraving the score… page ${i} of ${pages}`); await new Promise(r => setTimeout(r));
+        box.innerHTML = tk.renderToSVG(i); const svg = box.querySelector("svg");
+        if (i > 1) pdf.addPage("a4", "portrait");
+        await pdf.svg(svg, { x: 0, y: 0, width: 210, height: 297 });
+      }
+    } finally { box.remove(); }
+    download(pdf.output("blob"), exportName() + ".pdf");
+    info(`PDF of the score: ${pages} page${pages > 1 ? "s" : ""}, ${s.nBars} bars, with your edits.`);
+  } catch (e) { info("PDF failed: " + e.message); }
+};
+// Audio: Rhodes samples (player/make_samples.py --rhodes, jRhodes3c through
+// fluidsynth, one probed gain) played in an OfflineAudioContext, then the hall
+// of fp30x_studio/reverb.py (--wet 0.28 --rt60 2.1) by convolution, mixed and
+// peak-normalised the way reverb.py does it, written as 16-bit WAV.
+const RHODES = { p: 40, m: 80, f: 115 }, rhodesBufs = {}, rhodesDb = {};
+async function loadRhodes(ac) {
+  const jobs = [];
+  for (let p = 21; p < 109; p += 3) for (const L in RHODES) if (!(p + L in rhodesBufs))
+    jobs.push(fetch(`samples/rhodes/${p}${L}.mp3`).then(r => r.ok ? r.arrayBuffer() : null).then(b => b && ac.decodeAudioData(b)).then(b => { if (!b) return; rhodesBufs[p + L] = b; let pk = 0; for (let c = 0; c < b.numberOfChannels; c++) for (const x of b.getChannelData(c)) pk = Math.max(pk, Math.abs(x)); rhodesDb[p + L] = 20 * Math.log10(pk || 1e-6); }).catch(() => {}));
+  await Promise.all(jobs);
+  if (!Object.keys(rhodesBufs).length) throw Error("no Rhodes samples in player/samples/rhodes: run .venv/bin/python player/make_samples.py --rhodes once");
+}
+function rhodesVoice(p, v) {
+  const L = v < 60 ? "p" : v < 97 ? "m" : "f";
+  let best = null; for (let q = 21; q < 109; q += 3) if (rhodesBufs[q + L] && (best === null || Math.abs(q - p) < Math.abs(best - p))) best = q;
+  if (best === null) return null;
+  // loudness along the line through this pitch's layers (missing layers skipped), so a crescendo has no step at a layer change
+  const anchors = Object.keys(RHODES).filter(x => rhodesDb[best + x] != null).map(x => [RHODES[x], rhodesDb[best + x]]);
+  const db = K.layerGainDb(v, anchors, rhodesDb[best + L]);
+  return { buf: rhodesBufs[best + L], rate: Math.pow(2, (p - best) / 12), gain: 0.5 * Math.pow(10, db / 20) };
+}
+$("wav").onclick = async () => {
+  const mode = view === "score" ? "written" : "played", s = mode === "written" ? needScore() : (doc.beats ? score() : null);
+  if (mode === "written" && !s) return;
+  if (!doc.notes.length) { info("Nothing to render yet."); return; }
+  const btn = $("wav"); btn.disabled = true;
+  try {
+    const sr = 44100, ev = K.audioEvents(doc, s, mode), end = Math.max(...ev.map(e => e.end));
+    info(`Rendering audio (${mode === "written" ? "the score as written" : "the performance"}), ${mmss(end, 0)}: loading the Rhodes…`);
+    await loadRhodes(new OfflineAudioContext(2, sr, sr));
+    const len = Math.ceil((end + 1.5) * sr), dryCtx = new OfflineAudioContext(2, len, sr);
+    for (const e of ev) {
+      const vc = rhodesVoice(e.p, e.v); if (!vc) continue;
+      const src = dryCtx.createBufferSource(), g = dryCtx.createGain();
+      src.buffer = vc.buf; src.playbackRate.value = vc.rate; g.gain.value = vc.gain;
+      src.connect(g); g.connect(dryCtx.destination);
+      const stop = Math.min(e.end, e.t + vc.buf.duration / vc.rate);
+      g.gain.setTargetAtTime(0, stop, 0.08); src.start(e.t); src.stop(Math.min(stop + 0.7, e.t + vc.buf.duration / vc.rate));
+    }
+    info(`Rendering audio: playing ${ev.length} notes…`); const dry = await dryCtx.startRendering();
+    info("Rendering audio: putting it in the hall…"); await new Promise(r => setTimeout(r));
+    const irL = K.hallIR(sr, 2.1, 1000), irR = K.hallIR(sr, 2.1, 1001); // decorrelated per side, as reverb.py
+    const wetCtx = new OfflineAudioContext(2, len + irL.length, sr), conv = wetCtx.createConvolver(), ir = wetCtx.createBuffer(2, irL.length, sr);
+    ir.copyToChannel(irL, 0); ir.copyToChannel(irR, 1); conv.normalize = false; conv.buffer = ir;
+    const src = wetCtx.createBufferSource(); src.buffer = dry; src.connect(conv); conv.connect(wetCtx.destination); src.start(0);
+    const hall = await wetCtx.startRendering();
+    info("Rendering audio: mixing and writing the file…"); await new Promise(r => setTimeout(r));
+    const out = K.hallMix([dry.getChannelData(0), dry.getChannelData(1)], [hall.getChannelData(0), hall.getChannelData(1)], 0.28, -1);
+    download(new Blob([K.wav16(out, sr)], { type: "audio/wav" }), `${exportName()}-rhodes-hall-${mode}.wav`);
+    info(`Audio of ${mode === "written" ? "the score as written (steady tempo)" : "the performance, with your edits"}: Rhodes in a hall, ${mmss(out[0].length / sr, 0)}, WAV. ${mode === "written" ? "In Live view, Audio renders the performance instead." : "In Score view, Audio renders the score as written."}`);
+  } catch (e) { info("Audio failed: " + e.message); }
+  finally { btn.disabled = false; }
 };
 
 addEventListener("keydown", e => {
