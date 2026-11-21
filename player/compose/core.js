@@ -498,12 +498,13 @@ function notate(doc) {
     const put = (a, b, chord) => {
       while (a < b) {
         const m = Math.floor(a / barLen); if (m >= nBars) return;
+        if (m < 0) { a = Math.min(b, 0); continue; } // nothing is written before bar 1
         const segEnd = Math.min(b, (m + 1) * barLen);
         const ps = pieces(a, segEnd, m * barLen, barLen, subAt, unit);
         ps.forEach((pc, j) => {
           pc.rest = !chord;
           if (chord) {
-            const cont = a > chord.on || j > 0, more = j < ps.length - 1 || segEnd < b;
+            const cont = a > Math.max(chord.on, 0) || j > 0, more = j < ps.length - 1 || segEnd < b;
             pc.notes = [...chord.rs].sort((x, y) => x.n.p - y.n.p).map(r => ({ p: r.n.p, v: r.n.v, id: r.n.id, ...spell(r.n.p, key), tieNext: more, tied: cont }));
           }
           bars[m].staves[s].push(pc);
@@ -585,6 +586,58 @@ function deleteBars(doc, m1, m2) {
   doc.pedal = (doc.pedal || []).filter(([t]) => t < A || t >= B).map(([t, v]) => [t >= B ? t - D : t, v]);
   doc.beats = doc.beats.slice(0, m1 * k).concat(doc.beats.slice((m2 + 1) * k).map(t => t - D));
 }
+// ------------------------------------------------------------------ note edits
+// Notes are addressed by id: the score carries each note's id on every head it
+// draws (a tied note has several), so a click on any of them is a click on the note.
+function ensureIds(doc) {
+  const seen = new Set();
+  for (const n of doc.notes) { if (!n.id || seen.has(n.id)) n.id = newId(); seen.add(n.id); }
+}
+function deleteNotes(doc, ids) { const s = new Set(ids); doc.notes = doc.notes.filter(n => !s.has(n.id)); }
+function transposeNotes(doc, ids, dp) {
+  const s = new Set(ids), before = new Map();
+  for (const n of doc.notes) if (s.has(n.id)) { before.set(n, { ...n }); n.p = Math.max(21, Math.min(108, n.p + dp)); }
+  return keepDistinct(doc, before);
+}
+// A chord holds each pitch once, so a note moved onto the same pitch at the
+// same written onset as another would vanish into it. Such a move is undone.
+// Returns how many of the notes actually changed.
+function keepDistinct(doc, before) {
+  const end = doc.notes.reduce((e, n) => Math.max(e, n.t + n.d), 0);
+  const { q } = quantise(doc.notes, extendBeats(doc.beats, end + 0.01), doc.pedal);
+  const at = new Map(), clash = new Set();
+  for (const r of q) { const k = r.on + ":" + r.n.p; if (at.has(k)) { clash.add(r.n); clash.add(at.get(k)); } else at.set(k, r.n); }
+  let moved = 0;
+  for (const [n, old] of before) {
+    if (clash.has(n)) Object.assign(n, old);
+    else if (n.p !== old.p || n.t !== old.t || n.d !== old.d) moved++;
+  }
+  doc.notes.sort((a, b) => a.t - b.t || a.p - b.p);
+  return moved;
+}
+// Move onsets one step of the grid the beat is written on: a sixteenth in a
+// beat of four, a triplet eighth in a beat of three, the whole beat in a beat
+// with no subdivision. Stepping left off a beat line takes the previous beat's
+// grid, so a note always lands on a grid the quantiser will read back exactly.
+// The onset is placed on that grid line in seconds, and the release moves by
+// the same number of beats: the note keeps its length.
+function nudgeNotes(doc, ids, dir) {
+  const s = new Set(ids), end = doc.notes.reduce((e, n) => Math.max(e, n.t + n.d), 0);
+  const beats = extendBeats(doc.beats, end + 0.01);
+  const { q, subAt } = quantise(doc.notes, beats, doc.pedal);
+  const on = new Map(q.map(r => [r.n, r.on])), before = new Map();
+  for (const n of doc.notes) {
+    if (!s.has(n.id)) continue;
+    before.set(n, { ...n });
+    const tick = on.has(n) ? on.get(n) : Math.round(secToBeat(n.t, beats) * TPB), bi = Math.floor(tick / TPB);
+    const to = dir > 0 ? tick + TPB / subAt(bi) : tick - TPB / subAt(tick % TPB ? bi : bi - 1);
+    if (to < 0) continue; // bar 1 is the start of the piece
+    const shift = to / TPB - secToBeat(n.t, beats), e = beatToSec(secToBeat(n.t + n.d, beats) + shift, beats);
+    n.t = beatToSec(to / TPB, beats); n.d = Math.max(0.01, e - n.t);
+  }
+  return keepDistinct(doc, before);
+}
+
 // Double or halve the beat, keeping the bar lines where they are when halving.
 function scaleTempo(doc, factor) {
   const b = doc.beats;
@@ -672,7 +725,8 @@ function demoDoc(seed = 7) {
 
 const api = { TPB, KEYS, keyByName, detectKey, spell, spellPc, pedalSpans, releaseWithPedal, isGhost,
   trackBeats, extendBeats, secToBeat, beatToSec, quantise, detectMeter, detect, setMeter, chooseMeter, alignBars, beatWeights, splitBeats, unitOf, extendTracking, currentKey,
-  notate, pieces, copyBars, pasteBars, deleteBars, ensureBars, scaleTempo, scoreEvents, smf, demoDoc, newId };
+  notate, pieces, copyBars, pasteBars, deleteBars, ensureBars, scaleTempo, scoreEvents, smf, demoDoc, newId,
+  ensureIds, deleteNotes, transposeNotes, nudgeNotes };
 G.ComposeCore = api;
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
