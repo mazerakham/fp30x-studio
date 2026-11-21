@@ -683,4 +683,20 @@ resizeLive(); refresh(); initMidi(); loadPiano();
 vt = Math.max(0, cursor - 3);
 info(doc.notes.length ? `Your last piece is here: ${doc.notes.length} notes. <kbd>W</kbd> writes more at the cursor; <kbd>New</kbd> starts over.` : "Play: what you play shows up as you play it. <kbd>W</kbd> to write it down.");
 requestAnimationFrame(frame);
+
+// ?f=<url of a Compose .json> opens that piece, so a recorded take can be handed
+// over as a link. The doc remembers its source: opening the same link again
+// keeps the edits made since instead of reloading the file over them. Whatever
+// piece was open before is one ⌘Z away, and also kept in localStorage.
+const openFrom = new URLSearchParams(location.search).get("f");
+if (openFrom) {
+  const name = decodeURIComponent(openFrom.split("/").pop());
+  if (doc.source === openFrom) { setView(doc.beats ? "score" : "live"); info(`Your copy of <b>${name}</b>, with your edits. <kbd>⌘S</kbd> saves it to a file.`); }
+  else fetch(openFrom, { cache: "no-store" }).then(r => { if (!r.ok) throw Error(r.status); return r.json(); }).then(d => {
+    if (d.format !== "compose") throw Error("not a Compose file");
+    if (doc.notes.length) { snapshot(); try { localStorage.setItem(STORE + ":before-open", JSON.stringify(doc)); } catch (e) {} }
+    doc = Object.assign(d, { source: openFrom }); cursor = 0; vt = 0; sel = null; changed(); setView(doc.beats ? "score" : "live");
+    info(`Opened <b>${name}</b>: ${doc.notes.length} notes.` + (undoStack.length ? " <kbd>⌘Z</kbd> brings back the piece that was open." : ""));
+  }).catch(e => info(`Could not open ${name}: ${e.message}`));
+}
 </script></body></html>
