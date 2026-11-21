@@ -596,7 +596,7 @@ function pasteClip() {
   if (!score()) { info("Paste works on bars: press <kbd>N</kbd> first."); return; }
   if (clip.meter !== doc.meter || clip.unit !== (doc.unit || 4)) { info(`Those bars are in ${sigOf(clip)} and this piece is now in ${sigOf(doc)}.`); return; }
   const c = cursorBar(); snapshot(); K.pasteBars(doc, clip, c); changed();
-  sel = [c, c + clip.bars - 1]; cursor = barStartSec(c + clip.bars);
+  sel = [c, c + clip.bars - 1]; noteSel = new Set(); cursor = barStartSec(c + clip.bars);
   info(`Pasted ${clip.bars} bar${clip.bars > 1 ? "s" : ""} as bar${clip.bars > 1 ? "s" : ""} ${c + 1}${clip.bars > 1 ? "–" + (c + clip.bars) : ""}. Everything after moved along.`);
 }
 function deleteSel() {
@@ -605,18 +605,22 @@ function deleteSel() {
 }
 
 // ================================================================ note edits
+// After an undo the selected ids may name notes that no longer exist.
+function pruneNoteSel() { const live = new Set(doc.notes.map(n => n.id)); for (const id of noteSel) if (!live.has(id)) noteSel.delete(id); return noteSel.size; }
 function noteInfo(lead) {
-  const live = new Set(doc.notes.map(n => n.id)); for (const id of noteSel) if (!live.has(id)) noteSel.delete(id);
-  const n = noteSel.size;
+  const n = pruneNoteSel();
   if (!n) { info(lead || ""); return; }
   info(`${lead ? lead + " " : ""}<b>${n} note${n > 1 ? "s" : ""}</b> selected. <kbd>⌫</kbd> delete · <kbd>↑</kbd><kbd>↓</kbd> semitone · <kbd>←</kbd><kbd>→</kbd> move by a subdivision · <kbd>⇧</kbd>-click adds · <kbd>Esc</kbd> clears`);
 }
 function editNotes(what, arg) {
-  if (!noteSel.size || !score()) return;
-  const ids = [...noteSel]; snapshot();
+  if (!pruneNoteSel() || !score()) return;
+  const ids = [...noteSel], redoKeep = redoStack; snapshot(); let moved = ids.length;
   if (what === "delete") { K.deleteNotes(doc, ids); noteSel = new Set(); }
-  else if (what === "pitch") K.transposeNotes(doc, ids, arg);
-  else if (what === "time") K.nudgeNotes(doc, ids, arg);
+  else if (what === "pitch") moved = K.transposeNotes(doc, ids, arg);
+  else if (what === "time") moved = K.nudgeNotes(doc, ids, arg);
+  // An edit that changed nothing (the top of the keyboard, the start of bar 1,
+  // onto a note already there) leaves no undo step behind.
+  if (!moved) { undoStack.pop(); redoStack = redoKeep; refresh(); noteInfo(what === "pitch" ? "That pitch is already there, or off the keyboard." : "Nowhere to move: the start of bar 1, or a note already there."); return; }
   changed();
   const picked = doc.notes.filter(n => noteSel.has(n.id));
   if (what === "pitch") picked.slice(0, 6).forEach(n => audition(n.p, n.v));
@@ -698,8 +702,8 @@ addEventListener("keydown", e => {
   else if (k === "n") setView(view === "live" ? "score" : "live");
   else if (k === "m") $("met").click();
   else if (e.code === "Space") { e.preventDefault(); $("play").click(); }
-  else if ((e.key === "Backspace" || e.key === "Delete") && view === "score") { e.preventDefault(); noteSel.size ? editNotes("delete") : deleteSel(); }
-  else if (e.key.startsWith("Arrow") && view === "score" && noteSel.size) {
+  else if ((e.key === "Backspace" || e.key === "Delete") && view === "score") { e.preventDefault(); pruneNoteSel() ? editNotes("delete") : deleteSel(); }
+  else if (e.key.startsWith("Arrow") && view === "score" && pruneNoteSel()) {
     e.preventDefault(); const up = e.key === "ArrowUp", right = e.key === "ArrowRight";
     if (up || e.key === "ArrowDown") editNotes("pitch", up ? 1 : -1); else editNotes("time", right ? 1 : -1);
   }

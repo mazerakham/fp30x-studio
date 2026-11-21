@@ -222,6 +222,17 @@ t("nudge in a beat with no subdivision moves a whole beat", () => {
   C.nudgeNotes(d, ["d4"], 1); // D5 at tick 36, a quarter alone on its beat
   assert.strictEqual(ticksOf(C.notate(d)).get("d4")[0], 48);
 });
+t("a note moved onto the same pitch at the same onset stays where it was", () => {
+  const d = JSON.parse(JSON.stringify(doc));
+  // bar 4 treble: d13 F#4 (66) at 144, d14 E4 (64) at 168. Nudging E4 left a whole beat is fine;
+  // transposing it onto F#4 at F#4's tick is refused.
+  C.nudgeNotes(d, ["d14"], -1); const tk = ticksOf(C.notate(d)).get("d14")[0]; assert.ok(tk < 168);
+  const e = JSON.parse(JSON.stringify(doc)), t0 = C.notate(e), d16 = ticksOf(t0).get("d16");
+  // d15 D4 at 192 and d16 E4 at 196: moving E4 left lands on 192; with D4 retuned to E4 first, it clashes
+  C.transposeNotes(e, ["d15"], 2); assert.strictEqual(C.nudgeNotes(e, ["d16"], -1), 0);
+  assert.deepStrictEqual(ticksOf(C.notate(e)).get("d16"), d16);
+  assert.strictEqual(C.transposeNotes(e, ["d16"], 0), 0);
+});
 t("ensureIds gives every note a distinct id", () => {
   const d = { notes: [{ t: 0, d: 1, p: 60, v: 60 }, { id: "a", t: 1, d: 1, p: 62, v: 60 }, { id: "a", t: 2, d: 1, p: 64, v: 60 }] };
   C.ensureIds(d); assert.strictEqual(new Set(d.notes.map(n => n.id)).size, 3); assert.strictEqual(d.notes[1].id, "a");
