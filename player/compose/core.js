@@ -8,6 +8,8 @@
 //   meter  beats per bar once notated (2, 3, 4; or 6, 9, 12 with unit 8)
 //   unit   the note value of one beat: 4 (quarter) or 8 (eighth, for x/8 time)
 //   keyOverride  key name, or null to use the detected one
+// A note may carry `staff` (0 treble, 1 bass), set by hand; without it the
+// staff follows the register (middle C and up in the treble).
 // Notation is always *derived* from (notes, beats). Copy, paste and delete of
 // bars edit notes and beats together in seconds, so the live view and the score
 // stay two readings of one object.
@@ -454,7 +456,18 @@ function pieces(a, b, barStart, barLen, subAt, unit = 4) {
   return out;
 }
 
-// The score: bars of events for two staves (0 treble, 1 bass, split at C4).
+// Which staff a note is written on: the one chosen by hand, else by register.
+const staffOf = n => n.staff === 0 || n.staff === 1 ? n.staff : n.p >= 60 ? 0 : 1;
+// Move notes to the other staff. The choice is stored on the note, so it is
+// saved with the piece and survives transposing it.
+function toggleStaff(doc, ids) {
+  const s = new Set(ids); let n = 0;
+  for (const x of doc.notes) if (s.has(x.id)) { x.staff = 1 - staffOf(x); n++; }
+  return n;
+}
+
+// The score: bars of events for two staves (0 treble, 1 bass, split at C4
+// unless a note says otherwise).
 // A chord lasts until that staff's next onset, unless it was let go at least
 // half a beat earlier (then the gap is a rest), so legato playing is not
 // riddled with short rests and the pedal does not smear across chords.
@@ -468,7 +481,7 @@ function notate(doc) {
   let lastTick = 0;
   const staves = [[], []];
   for (const s of [0, 1]) {
-    const mine = q.filter(r => (r.n.p >= 60 ? 0 : 1) === s).sort((a, b) => a.on - b.on || a.n.p - b.n.p);
+    const mine = q.filter(r => staffOf(r.n) === s).sort((a, b) => a.on - b.on || a.n.p - b.n.p);
     const chords = [];
     for (const r of mine) {
       const c = chords[chords.length - 1];
@@ -726,7 +739,7 @@ function demoDoc(seed = 7) {
 const api = { TPB, KEYS, keyByName, detectKey, spell, spellPc, pedalSpans, releaseWithPedal, isGhost,
   trackBeats, extendBeats, secToBeat, beatToSec, quantise, detectMeter, detect, setMeter, chooseMeter, alignBars, beatWeights, splitBeats, unitOf, extendTracking, currentKey,
   notate, pieces, copyBars, pasteBars, deleteBars, ensureBars, scaleTempo, scoreEvents, smf, demoDoc, newId,
-  ensureIds, deleteNotes, transposeNotes, nudgeNotes };
+  ensureIds, deleteNotes, transposeNotes, nudgeNotes, staffOf, toggleStaff };
 G.ComposeCore = api;
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

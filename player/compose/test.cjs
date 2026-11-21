@@ -233,6 +233,26 @@ t("a note moved onto the same pitch at the same onset stays where it was", () =>
   assert.deepStrictEqual(ticksOf(C.notate(e)).get("d16"), d16);
   assert.strictEqual(C.transposeNotes(e, ["d16"], 0), 0);
 });
+const staffHas = (sc, id) => { for (const bar of sc.bars) for (const st of [0, 1]) for (const e of bar.staves[st]) if (!e.rest) for (const n of e.notes) if (n.id === id) return st; return null; };
+t("a note moved to the other staff is drawn there, and stays there after save and reload", () => {
+  const d = JSON.parse(JSON.stringify(doc));
+  assert.strictEqual(staffHas(C.notate(d), "d0"), 0);
+  assert.strictEqual(C.toggleStaff(d, ["d0"]), 1);
+  const back = JSON.parse(JSON.stringify(d)); // the saved file
+  const s = C.notate(back); assert.strictEqual(staffHas(s, "d0"), 1);
+  // it joins the bass chord on beat 1 (D3), at the same tick
+  const ev = s.bars[0].staves[1].find(e => !e.rest && e.tick === 0);
+  assert.deepStrictEqual(ev.notes.map(n => n.p), [50, 69]);
+  assert.strictEqual(staffHas(s, "d27"), 1); // and the D3 is still there
+  // transposing does not undo the choice; toggling again does
+  C.transposeNotes(back, ["d0"], 12); assert.strictEqual(staffHas(C.notate(back), "d0"), 1);
+  C.toggleStaff(back, ["d0"]); assert.strictEqual(staffHas(C.notate(back), "d0"), 0);
+});
+t("moving notes between staves changes no onset tick", () => {
+  const d = JSON.parse(JSON.stringify(doc)), before = ticksOf(C.notate(d));
+  C.toggleStaff(d, ["d27", "d28", "d5", "d6"]); const after = ticksOf(C.notate(d));
+  for (const [id, v] of before) assert.deepStrictEqual(after.get(id), v, id);
+});
 t("ensureIds gives every note a distinct id", () => {
   const d = { notes: [{ t: 0, d: 1, p: 60, v: 60 }, { id: "a", t: 1, d: 1, p: 62, v: 60 }, { id: "a", t: 2, d: 1, p: 64, v: 60 }] };
   C.ensureIds(d); assert.strictEqual(new Set(d.notes.map(n => n.id)).size, 3); assert.strictEqual(d.notes[1].id, "a");
