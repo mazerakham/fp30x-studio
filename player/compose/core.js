@@ -459,10 +459,15 @@ function pieces(a, b, barStart, barLen, subAt, unit = 4) {
 // Which staff a note is written on: the one chosen by hand, else by register.
 const staffOf = n => n.staff === 0 || n.staff === 1 ? n.staff : n.p >= 60 ? 0 : 1;
 // Move notes to the other staff. The choice is stored on the note, so it is
-// saved with the piece and survives transposing it.
+// saved with the piece and survives transposing it. Moving a note back to the
+// staff its register would give it clears the choice: S twice is no change.
 function toggleStaff(doc, ids) {
   const s = new Set(ids); let n = 0;
-  for (const x of doc.notes) if (s.has(x.id)) { x.staff = 1 - staffOf(x); n++; }
+  for (const x of doc.notes) if (s.has(x.id)) {
+    const to = 1 - staffOf(x);
+    if (to === (x.p >= 60 ? 0 : 1)) delete x.staff; else x.staff = to;
+    n++;
+  }
   return n;
 }
 

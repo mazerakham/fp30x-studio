@@ -244,9 +244,11 @@ t("a note moved to the other staff is drawn there, and stays there after save an
   const ev = s.bars[0].staves[1].find(e => !e.rest && e.tick === 0);
   assert.deepStrictEqual(ev.notes.map(n => n.p), [50, 69]);
   assert.strictEqual(staffHas(s, "d27"), 1); // and the D3 is still there
-  // transposing does not undo the choice; toggling again does
+  // transposing does not undo the choice; toggling again clears it
   C.transposeNotes(back, ["d0"], 12); assert.strictEqual(staffHas(C.notate(back), "d0"), 1);
   C.toggleStaff(back, ["d0"]); assert.strictEqual(staffHas(C.notate(back), "d0"), 0);
+  assert.ok(!("staff" in back.notes.find(n => n.id === "d0")), "back on its register's staff, no override left");
+  C.transposeNotes(back, ["d0"], -24); assert.strictEqual(staffHas(C.notate(back), "d0"), 1); // A3 goes to the bass again
 });
 t("moving notes between staves changes no onset tick", () => {
   const d = JSON.parse(JSON.stringify(doc)), before = ticksOf(C.notate(d));
