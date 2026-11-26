@@ -45,6 +45,7 @@ STEPS = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0)
 HALF_COST = 0.12          #: bias toward whole pulses
 SPLIT = 55                #: below this MIDI pitch goes to the bass staff
 MAX_BARS = 8
+SUFFIX = "abcdefghijklmnopqrstuvwxyz"    #: chunk names when a window is split
 
 
 @dataclass
@@ -191,10 +192,12 @@ def build(name, notes, t0, t1, *, pulse=None):
         if not ev:
             continue
         first = ev[0][0]
-        nb = int(-(-(ev[-1][0] + 1) // m))
+        # capped at the chunk's own bars: a last onset half a pulse before the
+        # cut line would otherwise spill into a ninth, nearly empty bar
+        nb = min(per, int(-(-(ev[-1][0] + 1) // m)))
         ts = [n.t for _, ns in ev for n in ns]
-        r = dict(rep) if j == 0 else {"continues": name + "abc"[j - 1]}
-        sub = Riff(name + "abc"[j], min(ts), max(ts) + 0.5,
+        r = dict(rep) if j == 0 else {"continues": name + SUFFIX[j - 1]}
+        sub = Riff(name + SUFFIX[j], min(ts), max(ts) + 0.5,
                    [(p - first, ns) for p, ns in ev], u, fast, m, first, nb, r)
         out.append(sub)
     return out
@@ -340,7 +343,7 @@ button{font:inherit;font-size:.85rem;border:1px solid var(--line);background:var
 """
 
 PAGE_JS = """
-const KEY='riffs-edits-'+document.body.dataset.take;
+const KEY='riffs-edits-'+document.body.dataset.take+'-'+document.body.dataset.render;
 let st={};try{st=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){};summary()}
 function summary(){const out=[];document.querySelectorAll('.riff').forEach(r=>{const n=r.dataset.name,s=st[n]||{};
@@ -373,6 +376,10 @@ def _mmss(t):
 
 def page(out, index, *, title, take):
     """One self-contained HTML page: score, both audios, bar-level cut marks."""
+    import hashlib
+    # Bar numbers in saved cut marks mean "bars of THIS render". After --edits
+    # the riff is redrawn with fewer bars, so the old marks must not come back.
+    render = hashlib.sha1(json.dumps(index, sort_keys=True).encode()).hexdigest()[:10]
     cards = []
     for r in index:
         n = r["name"]
@@ -398,7 +405,7 @@ def page(out, index, *, title, take):
 <div class="paper">{svg}</div></section>""")
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>
-<style>{PAGE_CSS}</style></head><body data-take="{html.escape(take)}"><main>
+<style>{PAGE_CSS}</style></head><body data-take="{html.escape(take)}" data-render="{render}"><main>
 <h1>{html.escape(title)}</h1>
 <p class="lede">{len(index)} riffs from <code>{html.escape(take)}</code>. Each is held to a steady pulse: grace notes, ghosts and hesitations were cut so the rhythm repeats.</p>
 <p class="how">Click a bar to mark it cut (click again to keep it). <b>Drop</b> removes a whole riff. Then <b>Copy edits</b> and paste the line back to Claude, which applies them and re-renders.</p>
